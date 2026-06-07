@@ -2,8 +2,12 @@ package config
 
 import (
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"os"
+	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -137,10 +141,37 @@ func ParseAgentURI(uri string) (*AgentConfig, error) {
 	}, nil
 }
 
+// GetPublicIP 获取外网IP
+func GetPublicIP() string {
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get("https://ip.sb")
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	ip, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(ip))
+}
+
 // GenerateAgentURI 根据Server配置生成Agent连接URI
 func GenerateAgentURI(cfg *ServerConfigFile) string {
 	apiAddr := cfg.Server.API
-	// 去掉前导冒号格式化为 host:port
+	// 提取端口
+	port := apiAddr
+	if idx := strings.LastIndex(apiAddr, ":"); idx >= 0 {
+		port = apiAddr[idx:]
+	}
+
+	// 尝试获取外网IP
+	publicIP := GetPublicIP()
+	if publicIP != "" {
+		return fmt.Sprintf("xray://%s@%s%s", cfg.Server.Token, publicIP, port)
+	}
+
+	// 回退到localhost
 	host := apiAddr
 	if host[0] == ':' {
 		host = "localhost" + host

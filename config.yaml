@@ -12,6 +12,7 @@ xray:
   level: ""                    # 漏洞等级过滤: low, medium, high, critical（留空不过滤）
   plugins: ""                  # 指定插件，逗号分隔（留空用默认）
   webhook_url: ""              # xray webhook-output目标URL（留空自动生成指向自身API）
+  auto_start: true             # Server启动后自动启动XRay；设为false可改为手动启动
 
 # 反连平台配置
 # 两种模式：

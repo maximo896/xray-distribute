@@ -39,6 +39,9 @@ func TestChromeForwardTransportFallsBackToHTTP1WhenH2Unsupported(t *testing.T) {
 		h2: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			return nil, errors.New(`unexpected ALPN protocol "http/1.1"`)
 		}),
+		h2Compat: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return nil, errors.New(`unexpected ALPN protocol "http/1.1"`)
+		}),
 		h1: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			h1Called = true
 			return &http.Response{
@@ -74,6 +77,10 @@ func TestChromeForwardTransportDoesNotFallbackForNonReplayableRequests(t *testin
 		h2: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			return nil, wantErr
 		}),
+		h2Compat: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			t.Fatal("HTTP/2 compat fallback should not run for non-replayable requests")
+			return nil, nil
+		}),
 		h1: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			t.Fatal("HTTP/1 fallback should not run for non-ALPN errors")
 			return nil, nil
@@ -87,5 +94,45 @@ func TestChromeForwardTransportDoesNotFallbackForNonReplayableRequests(t *testin
 	req.GetBody = nil
 	if _, err := transport.RoundTrip(req); !errors.Is(err, wantErr) {
 		t.Fatalf("expected %v, got %v", wantErr, err)
+	}
+}
+
+func TestChromeForwardTransportTriesCompatH2BeforeHTTP1(t *testing.T) {
+	var h2CompatCalled bool
+	var h1Called bool
+	transport := &chromeForwardTransport{
+		h2: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return nil, errors.New("stream reset")
+		}),
+		h2Compat: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			h2CompatCalled = true
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader("ok")),
+				Request:    req,
+			}, nil
+		}),
+		h1: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			h1Called = true
+			return nil, errors.New("should not call h1")
+		}),
+	}
+
+	req, err := http.NewRequest(http.MethodGet, "https://example.com/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("round trip: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if !h2CompatCalled {
+		t.Fatal("expected compat HTTP/2 fallback")
+	}
+	if h1Called {
+		t.Fatal("did not expect HTTP/1 fallback after compat HTTP/2 succeeds")
 	}
 }

@@ -29,12 +29,15 @@ func newUTLSForwardClient() (*http.Client, error) {
 		TLSNextProto:        map[string]func(string, *tls.Conn) http.RoundTripper{},
 	}
 	h2Transport := &http2.Transport{
-		DialTLSContext: dialTLSWithUTLSH2,
+		DialTLSContext: dialTLSWithUTLSH2Auto,
+	}
+	h2CompatTransport := &http2.Transport{
+		DialTLSContext: dialTLSWithUTLSH2Chrome120,
 	}
 
 	return &http.Client{
 		Timeout:   30 * time.Second,
-		Transport: &chromeForwardTransport{h2: h2Transport, h1: h1Transport},
+		Transport: &chromeForwardTransport{h2: h2Transport, h2Compat: h2CompatTransport, h1: h1Transport},
 		Jar:       jar,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
@@ -43,8 +46,9 @@ func newUTLSForwardClient() (*http.Client, error) {
 }
 
 type chromeForwardTransport struct {
-	h2 http.RoundTripper
-	h1 http.RoundTripper
+	h2       http.RoundTripper
+	h2Compat http.RoundTripper
+	h1       http.RoundTripper
 }
 
 func (t *chromeForwardTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -58,7 +62,20 @@ func (t *chromeForwardTransport) RoundTrip(req *http.Request) (*http.Response, e
 	if err == nil {
 		return resp, nil
 	}
-	if shouldRetryHTTP1(err) || canRetryWithHTTP1(req) {
+
+	if canRetry(req) && t.h2Compat != nil {
+		retryReq, retryErr := cloneRequestForRetry(req)
+		if retryErr != nil {
+			return nil, err
+		}
+		resp, compatErr := t.h2Compat.RoundTrip(retryReq)
+		if compatErr == nil {
+			return resp, nil
+		}
+		err = compatErr
+	}
+
+	if canRetry(req) {
 		retryReq, retryErr := cloneRequestForRetry(req)
 		if retryErr != nil {
 			return nil, err
@@ -90,15 +107,7 @@ func applyChromeHeaders(req *http.Request) {
 	}
 }
 
-func shouldRetryHTTP1(err error) bool {
-	msg := err.Error()
-	return strings.Contains(msg, "unexpected ALPN protocol") ||
-		strings.Contains(msg, "server selected unadvertised ALPN protocol") ||
-		strings.Contains(msg, "http2: unexpected ALPN") ||
-		strings.Contains(msg, "no application protocol")
-}
-
-func canRetryWithHTTP1(req *http.Request) bool {
+func canRetry(req *http.Request) bool {
 	return req.Body == nil || req.GetBody != nil
 }
 
@@ -139,8 +148,17 @@ func (c *utlsConn) ConnectionState() tls.ConnectionState {
 	}
 }
 
-func dialTLSWithUTLSH2(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
+func dialTLSWithUTLSH2Auto(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
 	conn, err := dialTLSWithUTLS(ctx, network, addr, []string{"h2", "http/1.1"}, utls.HelloChrome_Auto)
+	return requireH2(conn, err)
+}
+
+func dialTLSWithUTLSH2Chrome120(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
+	conn, err := dialTLSWithUTLS(ctx, network, addr, []string{"h2", "http/1.1"}, utls.HelloChrome_120)
+	return requireH2(conn, err)
+}
+
+func requireH2(conn *utlsConn, err error) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}

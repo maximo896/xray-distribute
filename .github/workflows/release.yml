@@ -68,6 +68,7 @@ jobs:
             level: ""
             plugins: ""
             webhook_url: ""
+            auto_start: true
 
           reverse:
             enabled: true

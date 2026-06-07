@@ -195,6 +195,17 @@ func main() {
 		}
 	}()
 
+	if cfg.XRay.AutoStartEnabled() {
+		go func() {
+			time.Sleep(500 * time.Millisecond)
+			if err := xrayMgr.Start("default"); err != nil {
+				logger.Warn("xray auto start failed", "error", err)
+			}
+		}()
+	} else {
+		logger.Info("xray auto start disabled")
+	}
+
 	// Start embedded web panel.
 	go func() {
 		logger.Info("web panel starting", "addr", cfg.Server.HTTP)

@@ -64,6 +64,11 @@ type XRayConfig struct {
 	Level      string `yaml:"level"`
 	Plugins    string `yaml:"plugins"`
 	WebhookURL string `yaml:"webhook_url"`
+	AutoStart  *bool  `yaml:"auto_start"`
+}
+
+func (c XRayConfig) AutoStartEnabled() bool {
+	return c.AutoStart == nil || *c.AutoStart
 }
 
 // ReverseConfig XRay反连平台配置

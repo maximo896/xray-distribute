@@ -1,0 +1,41 @@
+# Binaries
+*.exe
+!dist/xray-distribute-local/agent.exe
+xray-distribute
+server_linux
+agent_linux
+
+# Runtime data
+data/store.json
+data/traffic*.db
+data/oob_interactions.json
+data/reverse.db
+data/config.generated.yaml
+data/certs/
+!data/certs/.gitkeep
+
+# Xray binary (too large for git, distribute via release)
+data/xray
+data/xray.exe
+
+# Dist build artifacts (distributed via release)
+dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+vendor/
+
+# Node
+web/node_modules/
+web/.nuxt/
+web/.output/
+web/.nitro/

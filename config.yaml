@@ -1,0 +1,47 @@
+# XRay-Distribute Server配置
+server:
+  http: ":8090"      # Web面板端口
+  api: ":8081"       # API端口（Agent连接用）
+  token: "your-secret-token"  # 认证Token，Agent和API共用
+
+xray:
+  binary: "data/xray.exe"           # XRay二进制路径
+  config: ""                   # XRay配置文件路径（可选，留空用默认）
+  data_dir: "./data"           # 数据存储目录
+  listen: "127.0.0.1:7777"     # XRay被动扫描监听地址
+  level: ""                    # 漏洞等级过滤: low, medium, high, critical（留空不过滤）
+  plugins: ""                  # 指定插件，逗号分隔（留空用默认）
+  webhook_url: ""              # xray webhook-output目标URL（留空自动生成指向自身API）
+
+# 反连平台配置
+# 两种模式：
+#   interactsh - 不需要域名！使用interactsh公共OOB服务器，零配置开箱即用
+#   local      - 需要域名+DNS泛解析，xray自带反连服务
+reverse:
+  enabled: true
+  mode: "interactsh"           # interactsh 或 local
+  token: ""                    # 反连平台认证token
+
+  # interactsh模式配置（mode: interactsh时生效）
+  interactsh_server: "https://oast.fun"  # 公共interactsh服务器，默认 oast.fun
+  interactsh_token: ""                    # interactsh服务器token（一般不需要）
+  adapter_listen: "127.0.0.1:9900"       # 本地API适配器监听地址（xray查询反连结果用）
+
+  # 本地模式配置（mode: local时生效）
+  domain: ""                   # 回调域名，如 oast.yourdomain.com
+  listen_ip: "0.0.0.0"        # 监听IP
+  dns_port: 53                 # DNS端口
+  http_port: 80                # HTTP回调端口
+  dns_is_ns: false             # 是否修改了域名的NS指向反连平台
+
+webhook:
+  enabled: true
+  min_severity: "medium"  # 最低通知等级: high, medium, low, info
+
+db:
+  type: "sqlite"
+  dsn: "./data/xray-distribute.db"
+
+log:
+  level: "info"
+  output: "stdout"

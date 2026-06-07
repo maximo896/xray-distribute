@@ -2,10 +2,11 @@ package main
 
 import (
 	"context"
-	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -15,17 +16,47 @@ import (
 	"github.com/xray-distribute/internal/proxy"
 )
 
-func main() {
-	configFile := flag.String("config", "agent.yaml", "config file path")
-	flag.Parse()
+const defaultConfigFile = "agent.yaml"
 
+func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
-	// 加载配置
-	cfg, err := config.LoadAgentConfig(*configFile)
-	if err != nil {
-		logger.Error("load config failed", "error", err)
-		os.Exit(1)
+	// 解析参数：支持 agent xray://token@host:port 格式
+	var cfg *config.AgentConfig
+
+	args := os.Args[1:]
+	if len(args) > 0 && strings.HasPrefix(args[0], "xray://") {
+		// 从URI解析配置
+		var err error
+		cfg, err = config.ParseAgentURI(args[0])
+		if err != nil {
+			logger.Error("parse URI failed", "error", err)
+			os.Exit(1)
+		}
+		// 保存配置到文件，下次不用再传URI
+		if err := config.SaveAgentConfig(defaultConfigFile, cfg); err != nil {
+			logger.Warn("save config failed", "error", err)
+		} else {
+			logger.Info("config saved", "file", defaultConfigFile)
+		}
+	} else {
+		// 从配置文件加载
+		configFile := defaultConfigFile
+		if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+			configFile = args[0]
+		}
+		var err error
+		cfg, err = config.LoadAgentConfig(configFile)
+		if err != nil {
+			fmt.Println("Usage:")
+			fmt.Println("  agent xray://token@host:port     # 首次使用，从Server输出的URI启动")
+			fmt.Println("  agent                            # 使用已保存的配置启动")
+			fmt.Println()
+			fmt.Println("Example:")
+			fmt.Println("  agent xray://my-secret@192.168.1.100:8081")
+			logger.Error("no config found, please run with xray:// URI first", "error", err)
+			os.Exit(1)
+		}
 	}
 
 	// 验证与Server的连接
@@ -56,7 +87,7 @@ func main() {
 	sender := mirror.NewSender(cfg.Server.Address, cfg.Server.Token, logger)
 
 	// 创建镜像代理
-	p, err := proxy.New(cfg.Proxy.Listen, cfg.Proxy.Target, sender, certMgr, logger)
+	p, err := proxy.New(cfg.Proxy.Listen, sender, certMgr, logger)
 	if err != nil {
 		logger.Error("create proxy failed", "error", err)
 		os.Exit(1)
@@ -72,7 +103,6 @@ func main() {
 
 	logger.Info("agent started",
 		"listen", cfg.Proxy.Listen,
-		"target", cfg.Proxy.Target,
 		"server", cfg.Server.Address)
 
 	// 等待退出信号

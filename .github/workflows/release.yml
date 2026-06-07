@@ -18,6 +18,14 @@ jobs:
         with:
           go-version: '1.23'
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build frontend
+        run: |
+          cd web && npm install && npm run build
+
       - name: Build Server (Linux amd64)
         run: |
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o xray-distribute-server/xray-distribute ./cmd/server/
@@ -26,15 +34,16 @@ jobs:
         run: |
           CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o xray-distribute-local/agent.exe ./cmd/agent/
 
+      - name: Build Agent (Linux amd64)
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o xray-distribute-local/agent ./cmd/agent/
+
       - name: Prepare server package
         run: |
-          mkdir -p xray-distribute-server/data/certs xray-distribute-server/web
-          cp web/dist/index.html xray-distribute-server/web/
-          cp -r web/dist/assets xray-distribute-server/web/assets/
+          mkdir -p xray-distribute-server/data/certs
           cp data/xray.yaml data/plugin.xray.yaml data/module.xray.yaml xray-distribute-server/data/
           cp data/certs/ca.crt data/certs/ca.key xray-distribute-server/data/certs/ 2>/dev/null || true
 
-          # Create server config (Linux)
           cat > xray-distribute-server/config.yaml << 'CFG'
           server:
             http: ":8090"
@@ -76,7 +85,6 @@ jobs:
             output: "stdout"
           CFG
 
-          # Create start script
           cat > xray-distribute-server/start.sh << 'SH'
           #!/bin/bash
           SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -96,25 +104,8 @@ jobs:
       - name: Prepare local agent package
         run: |
           mkdir -p xray-distribute-local
-          # agent.exe already built above
+          # agent.exe and agent already built above
 
-          # Create agent config
-          cat > xray-distribute-local/agent.yaml << 'CFG'
-          server:
-            address: "http://YOUR_SERVER:8081"
-            token: "your-secret-token"
-
-          proxy:
-            listen: ":9090"
-            target: "http://localhost:8080"
-            cert_dir: "./certs"
-
-          log:
-            level: "info"
-            output: "stdout"
-          CFG
-
-          # Create start script
           cat > xray-distribute-local/start-agent.bat << 'BAT'
           @echo off
           chcp 65001 >nul
@@ -122,12 +113,28 @@ jobs:
           echo   XRay-Distribute Agent
           echo ========================================
           echo.
-          echo [*] Edit agent.yaml to set your server address!
+          echo [*] First time: agent.exe xray://token@host:port
+          echo [*] After that: just run agent.exe
           echo [*] Set browser proxy to 127.0.0.1:9090 to start scanning
           echo.
-          agent.exe -config agent.yaml
+          agent.exe %1
           pause
           BAT
+
+          cat > xray-distribute-local/start-agent.sh << 'SH'
+          #!/bin/bash
+          echo "========================================"
+          echo "  XRay-Distribute Agent"
+          echo "========================================"
+          echo ""
+          echo "[*] First time: ./agent xray://token@host:port"
+          echo "[*] After that: just run ./agent"
+          echo "[*] Set browser proxy to 127.0.0.1:9090 to start scanning"
+          echo ""
+          chmod +x agent
+          ./agent "$@"
+          SH
+          chmod +x xray-distribute-local/start-agent.sh
 
       - name: Download xray Linux binary
         run: |
@@ -151,7 +158,7 @@ jobs:
             ## XRay-Distribute 分布式漏洞扫描平台
 
             ### 服务器部署包 (xray-distribute-server.zip)
-            - Linux x86_64 server二进制
+            - Linux x86_64 server二进制（前端已内置）
             - 内含 xray 1.9.11 Linux版
             - Web管理面板
             - Interactsh OOB回调检测
@@ -160,9 +167,10 @@ jobs:
             1. 解压到服务器
             2. 修改 `config.yaml` 中的 `token`
             3. `chmod +x start.sh && ./start.sh`
+            4. 复制输出的 `agent xray://...` 命令给Agent端
 
             ### 本地Agent包 (xray-distribute-local.zip)
-            - Windows agent二进制
-            - 修改 `agent.yaml` 中的 server 地址和 token
-            - 运行 `start-agent.bat`
+            - Windows + Linux agent二进制
+            - 首次使用：`agent.exe xray://token@host:port`（从Server输出复制）
+            - 之后直接运行 `agent.exe` 即可
             - 浏览器代理设为 `127.0.0.1:9090` 即可扫描

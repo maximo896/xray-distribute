@@ -1,6 +1,8 @@
 package config
 
 import (
+	"fmt"
+	"net/url"
 	"os"
 
 	"gopkg.in/yaml.v3"
@@ -15,14 +17,13 @@ type AgentConfig struct {
 
 // ServerConfig 远端Server配置
 type ServerConfig struct {
-	Address string `yaml:"address"` // http://server:8080
+	Address string `yaml:"address"`
 	Token   string `yaml:"token"`
 }
 
 // ProxyConfig 代理配置
 type ProxyConfig struct {
 	Listen  string `yaml:"listen"`   // :9090
-	Target  string `yaml:"target"`   // http://localhost:8080 - 转发目标
 	CertDir string `yaml:"cert_dir"` // 证书存储目录，默认 ./certs
 }
 
@@ -45,26 +46,26 @@ type ServerConfigFile struct {
 
 // ServerListenConfig Server监听配置
 type ServerListenConfig struct {
-	HTTP  string `yaml:"http"` // :8080
+	HTTP  string `yaml:"http"` // :8090
 	API   string `yaml:"api"`  // :8081
 	Token string `yaml:"token"`
 }
 
 // XRayConfig XRay配置
 type XRayConfig struct {
-	Binary     string `yaml:"binary"`      // xray binary path
-	Config     string `yaml:"config"`      // xray配置文件路径
-	DataDir    string `yaml:"data_dir"`    // 数据目录
-	Listen     string `yaml:"listen"`      // 被动扫描监听地址，默认 127.0.0.1:7777
-	Level      string `yaml:"level"`       // 漏洞等级过滤: low, medium, high, critical
-	Plugins    string `yaml:"plugins"`     // 指定插件，逗号分隔
-	WebhookURL string `yaml:"webhook_url"` // xray webhook-output目标URL，留空则自动生成
+	Binary     string `yaml:"binary"`
+	Config     string `yaml:"config"`
+	DataDir    string `yaml:"data_dir"`
+	Listen     string `yaml:"listen"`
+	Level      string `yaml:"level"`
+	Plugins    string `yaml:"plugins"`
+	WebhookURL string `yaml:"webhook_url"`
 }
 
 // ReverseConfig XRay反连平台配置
 type ReverseConfig struct {
 	Enabled          bool   `yaml:"enabled"`
-	Mode             string `yaml:"mode"` // local 或 interactsh
+	Mode             string `yaml:"mode"`
 	Token            string `yaml:"token"`
 	Domain           string `yaml:"domain"`
 	ListenIP         string `yaml:"listen_ip"`
@@ -79,13 +80,72 @@ type ReverseConfig struct {
 // WebhookGlobalConfig Webhook全局配置
 type WebhookGlobalConfig struct {
 	Enabled     bool   `yaml:"enabled"`
-	MinSeverity string `yaml:"min_severity"` // high, medium, low
+	MinSeverity string `yaml:"min_severity"`
 }
 
 // DBConfig 数据库配置
 type DBConfig struct {
-	Type string `yaml:"type"` // sqlite, mysql
-	DSN  string `yaml:"dsn"`  // database source name
+	Type string `yaml:"type"`
+	DSN  string `yaml:"dsn"`
+}
+
+// ParseAgentURI 从 xray:// URI 解析Agent配置
+// 格式: xray://token@host:port?listen=:9090
+func ParseAgentURI(uri string) (*AgentConfig, error) {
+	u, err := url.Parse(uri)
+	if err != nil {
+		return nil, fmt.Errorf("invalid URI: %w", err)
+	}
+
+	if u.Scheme != "xray" {
+		return nil, fmt.Errorf("invalid scheme %q, expected 'xray'", u.Scheme)
+	}
+
+	token := u.User.Username()
+	if token == "" {
+		return nil, fmt.Errorf("missing token in URI, format: xray://token@host:port")
+	}
+
+	host := u.Host
+	if host == "" {
+		return nil, fmt.Errorf("missing host in URI")
+	}
+
+	// 构建server地址
+	address := fmt.Sprintf("http://%s", host)
+
+	// 解析query参数
+	q := u.Query()
+	listen := q.Get("listen")
+	if listen == "" {
+		listen = ":9090"
+	}
+
+	return &AgentConfig{
+		Server: ServerConfig{
+			Address: address,
+			Token:   token,
+		},
+		Proxy: ProxyConfig{
+			Listen:  listen,
+			CertDir: "./certs",
+		},
+		Log: LogConfig{
+			Level:  "info",
+			Output: "stdout",
+		},
+	}, nil
+}
+
+// GenerateAgentURI 根据Server配置生成Agent连接URI
+func GenerateAgentURI(cfg *ServerConfigFile) string {
+	apiAddr := cfg.Server.API
+	// 去掉前导冒号格式化为 host:port
+	host := apiAddr
+	if host[0] == ':' {
+		host = "localhost" + host
+	}
+	return fmt.Sprintf("xray://%s@%s", cfg.Server.Token, host)
 }
 
 // LoadAgentConfig 加载Agent配置
@@ -99,6 +159,15 @@ func LoadAgentConfig(path string) (*AgentConfig, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// SaveAgentConfig 保存Agent配置
+func SaveAgentConfig(path string, cfg *AgentConfig) error {
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
 }
 
 // LoadServerConfig 加载Server配置

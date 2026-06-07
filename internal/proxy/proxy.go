@@ -25,7 +25,6 @@ import (
 // HTTP/3(QUIC)通过剥离Alt-Svc响应头强制降级到HTTP/2
 type MirrorProxy struct {
 	listenAddr string
-	targetURL  *url.URL
 	mirror     *mirror.Sender
 	certMgr    *cert.CertManager
 	logger     *slog.Logger
@@ -34,15 +33,9 @@ type MirrorProxy struct {
 }
 
 // New 创建新的镜像代理
-func New(listenAddr string, target string, mirrorSender *mirror.Sender, certMgr *cert.CertManager, logger *slog.Logger) (*MirrorProxy, error) {
-	targetURL, err := url.Parse(target)
-	if err != nil {
-		return nil, err
-	}
-
+func New(listenAddr string, mirrorSender *mirror.Sender, certMgr *cert.CertManager, logger *slog.Logger) (*MirrorProxy, error) {
 	p := &MirrorProxy{
 		listenAddr: listenAddr,
-		targetURL:  targetURL,
 		mirror:     mirrorSender,
 		certMgr:    certMgr,
 		logger:     logger,
@@ -54,7 +47,7 @@ func New(listenAddr string, target string, mirrorSender *mirror.Sender, certMgr 
 
 // Start 启动代理
 func (p *MirrorProxy) Start() error {
-	p.logger.Info("mirror proxy starting", "listen", p.listenAddr, "target", p.targetURL.String())
+	p.logger.Info("mirror proxy starting", "listen", p.listenAddr)
 
 	ln, err := net.Listen("tcp", p.listenAddr)
 	if err != nil {
@@ -294,15 +287,25 @@ func (p *MirrorProxy) handleHTTP2Conn(conn net.Conn) {
 // handleWebSocket 处理HTTP/1.1 WebSocket升级
 func (p *MirrorProxy) handleWebSocket(clientConn net.Conn, req *http.Request, bodyBytes []byte, reader *bufio.Reader) {
 	// 连接目标WebSocket
-	targetURL := *p.targetURL
-	targetURL.Scheme = strings.Replace(targetURL.Scheme, "http", "ws", 1)
-	targetURL.Path = req.URL.Path
-	targetURL.RawQuery = req.URL.RawQuery
+	wsScheme := "ws"
+	if req.URL.Scheme == "https" {
+		wsScheme = "wss"
+	}
+	targetURL := url.URL{
+		Scheme:   wsScheme,
+		Host:     req.Host,
+		Path:     req.URL.Path,
+		RawQuery: req.URL.RawQuery,
+	}
 
 	// 建立到目标的TCP连接
-	targetHost := p.targetURL.Host
+	targetHost := req.Host
 	if !strings.Contains(targetHost, ":") {
-		targetHost = targetHost + ":80"
+		if wsScheme == "wss" {
+			targetHost = targetHost + ":443"
+		} else {
+			targetHost = targetHost + ":80"
+		}
 	}
 
 	targetConn, err := net.DialTimeout("tcp", targetHost, 10*time.Second)
@@ -313,7 +316,7 @@ func (p *MirrorProxy) handleWebSocket(clientConn net.Conn, req *http.Request, bo
 	defer targetConn.Close()
 
 	// 如果目标是wss，建立TLS
-	if strings.HasPrefix(targetURL.Scheme, "wss") {
+	if wsScheme == "wss" {
 		tlsTarget := tls.Client(targetConn, &tls.Config{InsecureSkipVerify: true})
 		if err := tlsTarget.Handshake(); err != nil {
 			return
@@ -523,10 +526,19 @@ func (p *MirrorProxy) handleHTTP2MITM(clientConn, targetConn net.Conn, domain st
 
 // forwardHTTPRequest 转发HTTP/1.x请求到目标并回写响应
 func (p *MirrorProxy) forwardHTTPRequest(req *http.Request, bodyBytes []byte, clientConn net.Conn) {
-	forwardURL := *p.targetURL
-	forwardURL.Path = req.URL.Path
-	forwardURL.RawQuery = req.URL.RawQuery
-	forwardURL.Fragment = req.URL.Fragment
+	forwardURL := url.URL{
+		Scheme:   req.URL.Scheme,
+		Host:     req.URL.Host,
+		Path:     req.URL.Path,
+		RawQuery: req.URL.RawQuery,
+		Fragment: req.URL.Fragment,
+	}
+	if forwardURL.Host == "" {
+		forwardURL.Host = req.Host
+	}
+	if forwardURL.Scheme == "" {
+		forwardURL.Scheme = "http"
+	}
 
 	var bodyReader io.Reader
 	if len(bodyBytes) > 0 {
@@ -576,9 +588,18 @@ func (p *MirrorProxy) forwardHTTPRequest(req *http.Request, bodyBytes []byte, cl
 
 // forwardH2Request 转发HTTP/2请求
 func (p *MirrorProxy) forwardH2Request(w http.ResponseWriter, r *http.Request, bodyBytes []byte) {
-	forwardURL := *p.targetURL
-	forwardURL.Path = r.URL.Path
-	forwardURL.RawQuery = r.URL.RawQuery
+	forwardURL := url.URL{
+		Scheme:   r.URL.Scheme,
+		Host:     r.URL.Host,
+		Path:     r.URL.Path,
+		RawQuery: r.URL.RawQuery,
+	}
+	if forwardURL.Host == "" {
+		forwardURL.Host = r.Host
+	}
+	if forwardURL.Scheme == "" {
+		forwardURL.Scheme = "https"
+	}
 
 	var bodyReader io.Reader
 	if len(bodyBytes) > 0 {
@@ -601,7 +622,19 @@ func (p *MirrorProxy) forwardH2Request(w http.ResponseWriter, r *http.Request, b
 	transport := &http2.Transport{
 		AllowHTTP: true,
 		DialTLSContext: func(ctx context.Context, network, addr string, cfg *tls.Config) (net.Conn, error) {
-			return net.DialTimeout(network, addr, 10*time.Second)
+			conn, err := net.DialTimeout(network, addr, 10*time.Second)
+			if err != nil {
+				return nil, err
+			}
+			if cfg != nil {
+				tlsConn := tls.Client(conn, cfg)
+				if err := tlsConn.Handshake(); err != nil {
+					conn.Close()
+					return nil, err
+				}
+				return tlsConn, nil
+			}
+			return conn, nil
 		},
 	}
 

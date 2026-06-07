@@ -1,12 +1,14 @@
 # XRay-Distribute Agent配置
+# 首次使用请运行: agent xray://token@host:port
+# 配置会自动保存到此文件，后续直接运行 agent 即可
+
 server:
-  address: "http://your-server:8081"  # 远端Server地址
-  token: "your-secret-token"          # 与Server配置的token一致
+  address: "http://your-server:8081"
+  token: "your-secret-token"
 
 proxy:
-  listen: ":9090"                     # 本地监听端口
-  target: "http://localhost:8080"     # 转发目标地址（实际业务服务）
-  cert_dir: "./certs"                 # CA证书存储目录
+  listen: ":9090"
+  cert_dir: "./certs"
 
 log:
   level: "info"

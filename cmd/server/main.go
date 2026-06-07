@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/xray-distribute/internal/reverse"
 	"github.com/xray-distribute/internal/store"
 	"github.com/xray-distribute/internal/webhook"
+	"github.com/xray-distribute/web"
 	"github.com/xray-distribute/internal/xray"
 )
 
@@ -60,14 +62,12 @@ func main() {
 	}
 
 	// 初始化XRay管理器
-	// 构建xray webhook-output的URL，指向自身API
 	xrayListen := cfg.XRay.Listen
 	if xrayListen == "" {
 		xrayListen = "127.0.0.1:7777"
 	}
 	xrayWebhookURL := cfg.XRay.WebhookURL
 	if xrayWebhookURL == "" {
-		// 自动生成：指向API端口的xray webhook接收端点
 		xrayWebhookURL = fmt.Sprintf("http://127.0.0.1%s/api/v1/xray/webhook", cfg.Server.API)
 	}
 	xrayMgr := xray.NewManager(cfg.XRay.Binary, cfg.XRay.Config, cfg.XRay.DataDir, xrayListen, xrayWebhookURL, cfg.XRay.Level, cfg.XRay.Plugins, logger)
@@ -114,7 +114,6 @@ func main() {
 	// 初始化流量接收器（默认500 QPS限速）
 	recv := mirror.NewReceiver(logger, 500)
 	recv.SetOnRequest(func(req *model.MirrorRequest) {
-		// 将流量发送到XRay
 		if err := xrayMgr.SendToXRay(req); err != nil {
 			logger.Debug("send to xray failed", "error", err)
 		}
@@ -197,19 +196,21 @@ func main() {
 		}
 	}()
 
-	// 启动Web面板（嵌入前端）
+	// 启动Web面板（嵌入前端资源）
 	go func() {
 		mux := http.NewServeMux()
-		// 前端静态文件
-		webDir := filepath.Join("web", "dist")
-		if _, err := os.Stat(webDir); err == nil {
-			fs := http.FileServer(http.Dir(webDir))
-			mux.Handle("/", fs)
-		} else {
-			mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-				w.Write([]byte("Web panel not built. Run: cd web && npm run build"))
-			})
-		}
+
+		// 嵌入的前端静态文件
+		fileServer := web.DistFileServer()
+		mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// SPA路由：非API、非静态资源的请求都返回index.html
+			path := r.URL.Path
+			if !strings.HasPrefix(path, "/api/") && !strings.Contains(path, ".") {
+				r.URL.Path = "/"
+			}
+			fileServer.ServeHTTP(w, r)
+		}))
+
 		// API代理
 		mux.Handle("/api/", http.StripPrefix("", apiServer.Handler()))
 
@@ -218,6 +219,21 @@ func main() {
 			logger.Error("web panel error", "error", err)
 		}
 	}()
+
+	// 输出Agent连接URI
+	agentURI := config.GenerateAgentURI(cfg)
+
+	fmt.Println()
+	fmt.Println("========================================")
+	fmt.Println("  XRay-Distribute Server Started")
+	fmt.Println("========================================")
+	fmt.Printf("  Web Panel:  http://localhost%s\n", cfg.Server.HTTP)
+	fmt.Printf("  API:        http://localhost%s\n", cfg.Server.API)
+	fmt.Println()
+	fmt.Println("  Agent连接命令（复制给Agent端执行）:")
+	fmt.Printf("  agent %s\n", agentURI)
+	fmt.Println("========================================")
+	fmt.Println()
 
 	logger.Info("xray-distribute server started",
 		"http", cfg.Server.HTTP,

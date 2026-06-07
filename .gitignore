@@ -19,7 +19,7 @@ data/xray
 data/xray.exe
 
 # Dist build artifacts (distributed via release)
-dist/
+/dist/
 
 # IDE
 .idea/
@@ -36,6 +36,6 @@ vendor/
 
 # Node
 web/node_modules/
-web/.nuxt/
-web/.output/
-web/.nitro/
+
+# Frontend build artifacts (needed by go:embed, rebuilt by CI)
+# web/dist/ is NOT ignored - required for go:embed at compile time

@@ -1,0 +1,168 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Build Server (Linux amd64)
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o xray-distribute-server/xray-distribute ./cmd/server/
+
+      - name: Build Agent (Windows amd64)
+        run: |
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o xray-distribute-local/agent.exe ./cmd/agent/
+
+      - name: Prepare server package
+        run: |
+          mkdir -p xray-distribute-server/data/certs xray-distribute-server/web
+          cp web/dist/index.html xray-distribute-server/web/
+          cp -r web/dist/assets xray-distribute-server/web/assets/
+          cp data/xray.yaml data/plugin.xray.yaml data/module.xray.yaml xray-distribute-server/data/
+          cp data/certs/ca.crt data/certs/ca.key xray-distribute-server/data/certs/ 2>/dev/null || true
+
+          # Create server config (Linux)
+          cat > xray-distribute-server/config.yaml << 'CFG'
+          server:
+            http: ":8090"
+            api: ":8081"
+            token: "your-secret-token"
+
+          xray:
+            binary: "data/xray"
+            config: ""
+            data_dir: "./data"
+            listen: "0.0.0.0:7777"
+            level: ""
+            plugins: ""
+            webhook_url: ""
+
+          reverse:
+            enabled: true
+            mode: "interactsh"
+            token: ""
+            interactsh_server: "https://oast.fun"
+            interactsh_token: ""
+            adapter_listen: "127.0.0.1:9900"
+            domain: ""
+            listen_ip: "0.0.0.0"
+            dns_port: 53
+            http_port: 80
+            dns_is_ns: false
+
+          webhook:
+            enabled: true
+            min_severity: "medium"
+
+          db:
+            type: "sqlite"
+            dsn: "./data/xray-distribute.db"
+
+          log:
+            level: "info"
+            output: "stdout"
+          CFG
+
+          # Create start script
+          cat > xray-distribute-server/start.sh << 'SH'
+          #!/bin/bash
+          SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+          cd "$SCRIPT_DIR"
+          if [ ! -f "data/xray" ]; then
+              echo "[!] data/xray not found! Please download xray linux binary from:"
+              echo "    https://github.com/chaitin/xray/releases"
+              echo "    and put it in data/xray"
+              exit 1
+          fi
+          chmod +x data/xray xray-distribute
+          echo "[*] Starting XRay-Distribute Server..."
+          ./xray-distribute -config config.yaml
+          SH
+          chmod +x xray-distribute-server/start.sh
+
+      - name: Prepare local agent package
+        run: |
+          mkdir -p xray-distribute-local
+          # agent.exe already built above
+
+          # Create agent config
+          cat > xray-distribute-local/agent.yaml << 'CFG'
+          server:
+            address: "http://YOUR_SERVER:8081"
+            token: "your-secret-token"
+
+          proxy:
+            listen: ":9090"
+            target: "http://localhost:8080"
+            cert_dir: "./certs"
+
+          log:
+            level: "info"
+            output: "stdout"
+          CFG
+
+          # Create start script
+          cat > xray-distribute-local/start-agent.bat << 'BAT'
+          @echo off
+          chcp 65001 >nul
+          echo ========================================
+          echo   XRay-Distribute Agent
+          echo ========================================
+          echo.
+          echo [*] Edit agent.yaml to set your server address!
+          echo [*] Set browser proxy to 127.0.0.1:9090 to start scanning
+          echo.
+          agent.exe -config agent.yaml
+          pause
+          BAT
+
+      - name: Download xray Linux binary
+        run: |
+          curl -sL https://github.com/chaitin/xray/releases/download/1.9.11/xray_linux_amd64.zip -o /tmp/xray_linux.zip
+          unzip -o /tmp/xray_linux.zip -d /tmp/xray_linux
+          cp /tmp/xray_linux/xray_linux_amd64 xray-distribute-server/data/xray
+          chmod +x xray-distribute-server/data/xray
+
+      - name: Package
+        run: |
+          cd xray-distribute-server && zip -r ../xray-distribute-server.zip . && cd ..
+          cd xray-distribute-local && zip -r ../xray-distribute-local.zip . && cd ..
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            xray-distribute-server.zip
+            xray-distribute-local.zip
+          body: |
+            ## XRay-Distribute 分布式漏洞扫描平台
+
+            ### 服务器部署包 (xray-distribute-server.zip)
+            - Linux x86_64 server二进制
+            - 内含 xray 1.9.11 Linux版
+            - Web管理面板
+            - Interactsh OOB回调检测
+
+            部署步骤：
+            1. 解压到服务器
+            2. 修改 `config.yaml` 中的 `token`
+            3. `chmod +x start.sh && ./start.sh`
+
+            ### 本地Agent包 (xray-distribute-local.zip)
+            - Windows agent二进制
+            - 修改 `agent.yaml` 中的 server 地址和 token
+            - 运行 `start-agent.bat`
+            - 浏览器代理设为 `127.0.0.1:9090` 即可扫描

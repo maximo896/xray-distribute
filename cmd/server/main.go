@@ -203,10 +203,10 @@ func main() {
 		// 嵌入的前端静态文件
 		fileServer := web.DistFileServer()
 		mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// SPA路由：非API、非静态资源的请求都返回index.html
 			path := r.URL.Path
-			if !strings.HasPrefix(path, "/api/") && !strings.Contains(path, ".") {
-				r.URL.Path = "/"
+			// SPA路由：根路径和非静态资源请求返回index.html
+			if path == "/" || (!strings.HasPrefix(path, "/api/") && !strings.HasPrefix(path, "/assets/")) {
+				r.URL.Path = "/index.html"
 			}
 			fileServer.ServeHTTP(w, r)
 		}))

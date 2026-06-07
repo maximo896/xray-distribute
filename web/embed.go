@@ -6,7 +6,7 @@ import (
 	"net/http"
 )
 
-//go:embed dist/**/*
+//go:embed dist/* dist/**/*
 var distFS embed.FS
 
 // DistFileServer 返回前端静态文件Handler

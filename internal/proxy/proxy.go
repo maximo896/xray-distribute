@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -33,32 +34,19 @@ type MirrorProxy struct {
 
 // New 创建新的镜像代理
 func New(listenAddr string, mirrorSender *mirror.Sender, certMgr *cert.CertManager, logger *slog.Logger) (*MirrorProxy, error) {
-	// 创建转发用的http.Client，自动处理H1/H2
-	transport := &http.Transport{
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 10,
-		IdleConnTimeout:     90 * time.Second,
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true,
-		},
-		ForceAttemptHTTP2: true,
+	// 创建使用uTLS的转发客户端，模拟Chrome TLS指纹
+	forwardClient, err := newUTLSForwardClient()
+	if err != nil {
+		return nil, fmt.Errorf("create utls client: %w", err)
 	}
-	// 配置H2支持
-	http2.ConfigureTransport(transport)
 
 	return &MirrorProxy{
-		listenAddr: listenAddr,
-		mirror:     mirrorSender,
-		certMgr:    certMgr,
-		logger:     logger,
-		h2Server:   &http2.Server{},
-		forwardClient: &http.Client{
-			Timeout:   30 * time.Second,
-			Transport: transport,
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		},
+		listenAddr:    listenAddr,
+		mirror:        mirrorSender,
+		certMgr:       certMgr,
+		logger:        logger,
+		h2Server:      &http2.Server{},
+		forwardClient: forwardClient,
 	}, nil
 }
 

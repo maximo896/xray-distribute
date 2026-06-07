@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -45,6 +46,10 @@ var testDomains = []struct {
 
 // TestRealDomainsIntegration 对20个真实域名进行完整代理测试
 func TestRealDomainsIntegration(t *testing.T) {
+	if os.Getenv("XRAY_RUN_REAL_DOMAINS") != "1" {
+		t.Skip("set XRAY_RUN_REAL_DOMAINS=1 to run real-domain proxy integration test")
+	}
+
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	certMgr, err := cert.NewCertManager(t.TempDir(), logger)

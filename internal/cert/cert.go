@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
+	"net"
 	"os"
 	"path/filepath"
 	"sync"
@@ -247,8 +248,12 @@ func (cm *CertManager) signCert(host string) (*tls.Certificate, error) {
 		DNSNames:     []string{host},
 	}
 
-	// 支持通配符
-	if host != "" && host[0] != '*' {
+	// 如果host是IP地址，添加IP SANs
+	if ip := net.ParseIP(host); ip != nil {
+		template.IPAddresses = []net.IP{ip}
+		template.DNSNames = nil // IP地址不用DNS SANs
+	} else if host != "" && host[0] != '*' {
+		// 支持通配符
 		template.DNSNames = append(template.DNSNames, "*."+host)
 	}
 

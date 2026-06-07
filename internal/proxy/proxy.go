@@ -76,47 +76,55 @@ func (p *MirrorProxy) Stop(ctx context.Context) error {
 	return nil
 }
 
+// bufferedConn 包装net.Conn使其可被bufio.Reader读取
+// 确保TLS握手时不会丢失已缓冲的数据
+type bufferedConn struct {
+	net.Conn
+	reader *bufio.Reader
+}
+
+func (c *bufferedConn) Read(b []byte) (int, error) {
+	return c.reader.Read(b)
+}
+
 // handleConn 处理每个入站连接
 func (p *MirrorProxy) handleConn(conn net.Conn) {
 	defer conn.Close()
-	conn.SetDeadline(time.Now().Add(30 * time.Second))
 
 	reader := bufio.NewReader(conn)
 
-	// 读取请求行
-	firstLine, err := reader.ReadString('\n')
-	if err != nil {
-		return
-	}
-	firstLine = strings.TrimRight(firstLine, "\r\n")
+	for {
+		conn.SetDeadline(time.Now().Add(30 * time.Second))
 
-	parts := strings.SplitN(firstLine, " ", 3)
-	if len(parts) < 2 {
-		return
-	}
+		// 直接用 http.ReadRequest 解析，避免手动解析请求行
+		req, err := http.ReadRequest(reader)
+		if err != nil {
+			if err != io.EOF {
+				p.logger.Debug("read request failed", "error", err)
+			}
+			return
+		}
 
-	method := strings.ToUpper(parts[0])
-	target := parts[1]
+		if req.Method == "CONNECT" {
+			p.handleConnect(req, reader, conn)
+			return // CONNECT接管连接后不再循环
+		}
 
-	if method == "CONNECT" {
-		// CONNECT 隧道：HTTPS代理
-		p.handleConnect(reader, target, conn)
-	} else {
-		// 普通HTTP请求
-		p.handleHTTP(reader, method, target, parts[2], conn)
+		p.handleHTTPRequest(req, reader, conn)
+
+		// 如果请求要求关闭连接则退出
+		if req.Close {
+			return
+		}
 	}
 }
 
 // handleConnect 处理CONNECT隧道（HTTPS代理）
-func (p *MirrorProxy) handleConnect(reader *bufio.Reader, hostPort string, conn net.Conn) {
-	// 读取剩余请求头
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil || line == "\r\n" || line == "\n" {
-			break
-		}
+func (p *MirrorProxy) handleConnect(req *http.Request, reader *bufio.Reader, conn net.Conn) {
+	hostPort := req.URL.Host
+	if hostPort == "" {
+		hostPort = req.Host
 	}
-
 	if !strings.Contains(hostPort, ":") {
 		hostPort = hostPort + ":443"
 	}
@@ -128,6 +136,7 @@ func (p *MirrorProxy) handleConnect(reader *bufio.Reader, hostPort string, conn 
 		conn.Write([]byte("HTTP/1.1 502 Bad Gateway\r\n\r\n"))
 		return
 	}
+	defer targetConn.Close()
 
 	// 回复200
 	conn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
@@ -142,9 +151,9 @@ func (p *MirrorProxy) handleConnect(reader *bufio.Reader, hostPort string, conn 
 	tlsCert, err := p.certMgr.GetCertForHost(domain)
 	if err != nil {
 		p.logger.Error("get cert failed", "domain", domain, "error", err)
-		// 降级为纯隧道
-		relayBidirectional(conn, targetConn)
-		targetConn.Close()
+		// 降级为纯隧道（不MITM，只做TCP中继）
+		bConn := &bufferedConn{Conn: conn, reader: reader}
+		relayBidirectional(bConn, targetConn)
 		return
 	}
 
@@ -154,20 +163,21 @@ func (p *MirrorProxy) handleConnect(reader *bufio.Reader, hostPort string, conn 
 		MinVersion:   tls.VersionTLS12,
 	}
 
-	tlsClientConn := tls.Server(conn, tlsConfig)
+	// 用bufferedConn包装，确保TLS握手能读到已缓冲的数据
+	bConn := &bufferedConn{Conn: conn, reader: reader}
+	tlsClientConn := tls.Server(bConn, tlsConfig)
 	tlsClientConn.SetDeadline(time.Now().Add(10 * time.Second))
 	if err := tlsClientConn.Handshake(); err != nil {
 		p.logger.Debug("tls handshake with client failed", "domain", domain, "error", err)
-		targetConn.Close()
 		return
 	}
 	tlsClientConn.SetDeadline(time.Time{})
 	defer tlsClientConn.Close()
 
-	// 与目标建立TLS
+	// 与目标建立TLS（强制HTTP/1.1简化处理）
 	tlsTargetConn := tls.Client(targetConn, &tls.Config{
 		InsecureSkipVerify: true,
-		NextProtos:         []string{"h2", "http/1.1"},
+		NextProtos:         []string{"http/1.1"},
 		MinVersion:         tls.VersionTLS12,
 	})
 	if err := tlsTargetConn.Handshake(); err != nil {
@@ -176,7 +186,7 @@ func (p *MirrorProxy) handleConnect(reader *bufio.Reader, hostPort string, conn 
 	}
 	defer tlsTargetConn.Close()
 
-	// 根据ALPN协商结果
+	// 根据客户端ALPN协商结果
 	connState := tlsClientConn.ConnectionState()
 	switch connState.NegotiatedProtocol {
 	case "h2":
@@ -186,20 +196,8 @@ func (p *MirrorProxy) handleConnect(reader *bufio.Reader, hostPort string, conn 
 	}
 }
 
-// handleHTTP 处理普通HTTP代理请求
-func (p *MirrorProxy) handleHTTP(reader *bufio.Reader, method, target, proto string, conn net.Conn) {
-	// 把第一行放回，用http.ReadRequest解析
-	// 读取reader中剩余的缓冲数据
-	remaining, _ := io.ReadAll(reader)
-	fullRequest := method + " " + target + " " + proto + "\r\n" + string(remaining)
-
-	reqReader := bufio.NewReader(strings.NewReader(fullRequest))
-	req, err := http.ReadRequest(reqReader)
-	if err != nil {
-		p.logger.Debug("parse http request failed", "error", err)
-		return
-	}
-
+// handleHTTPRequest 处理普通HTTP代理请求
+func (p *MirrorProxy) handleHTTPRequest(req *http.Request, reader *bufio.Reader, conn net.Conn) {
 	// 读取请求体
 	var bodyBytes []byte
 	if req.Body != nil {
@@ -207,7 +205,7 @@ func (p *MirrorProxy) handleHTTP(reader *bufio.Reader, method, target, proto str
 		req.Body.Close()
 	}
 
-	// 异步镜像
+	// 异步镜像（不阻塞代理）
 	go p.mirror.Send(req, bodyBytes)
 
 	// 转发请求到目标
@@ -216,9 +214,10 @@ func (p *MirrorProxy) handleHTTP(reader *bufio.Reader, method, target, proto str
 		bodyReader = bytes.NewBuffer(bodyBytes)
 	}
 
-	forwardReq, err := http.NewRequest(method, target, bodyReader)
+	forwardReq, err := http.NewRequest(req.Method, req.URL.String(), bodyReader)
 	if err != nil {
 		p.logger.Error("create forward request failed", "error", err)
+		conn.Write([]byte("HTTP/1.1 502 Bad Gateway\r\n\r\n"))
 		return
 	}
 
@@ -228,7 +227,6 @@ func (p *MirrorProxy) handleHTTP(reader *bufio.Reader, method, target, proto str
 			forwardReq.Header.Add(key, value)
 		}
 	}
-	// 设置正确的Host
 	forwardReq.Host = req.Host
 
 	client := &http.Client{
@@ -240,30 +238,28 @@ func (p *MirrorProxy) handleHTTP(reader *bufio.Reader, method, target, proto str
 
 	resp, err := client.Do(forwardReq)
 	if err != nil {
-		p.logger.Error("forward request failed", "url", target, "error", err)
+		p.logger.Error("forward request failed", "url", req.URL.String(), "error", err)
 		conn.Write([]byte("HTTP/1.1 502 Bad Gateway\r\n\r\n"))
 		return
 	}
 	defer resp.Body.Close()
 
-	// 剥离Alt-Svc
 	resp.Header.Del("Alt-Svc")
 
-	// 写回响应
+	// 写回完整响应
 	resp.Write(conn)
 }
 
 // handleH1MITM MITM模式HTTP/1.x
 func (p *MirrorProxy) handleH1MITM(clientConn, targetConn net.Conn, domain string) {
-	reader := bufio.NewReader(clientConn)
-	targetWriter := bufio.NewWriter(targetConn)
+	clientReader := bufio.NewReader(clientConn)
 	targetReader := bufio.NewReader(targetConn)
 
 	for {
 		clientConn.SetDeadline(time.Now().Add(5 * time.Minute))
 		targetConn.SetDeadline(time.Now().Add(5 * time.Minute))
 
-		req, err := http.ReadRequest(reader)
+		req, err := http.ReadRequest(clientReader)
 		if err != nil {
 			if err != io.EOF {
 				p.logger.Debug("read http1 request failed", "domain", domain, "error", err)
@@ -305,18 +301,16 @@ func (p *MirrorProxy) handleH1MITM(clientConn, targetConn net.Conn, domain strin
 			req.ContentLength = int64(len(bodyBytes))
 		}
 
-		if err := req.Write(targetWriter); err != nil {
+		if err := req.Write(targetConn); err != nil {
 			return
 		}
-		targetWriter.Flush()
 
-		// 读取目标响应
+		// 读取目标响应（复用同一个targetReader，不会丢失缓冲数据）
 		resp, err := http.ReadResponse(targetReader, req)
 		if err != nil {
 			return
 		}
 
-		// 剥离Alt-Svc
 		resp.Header.Del("Alt-Svc")
 
 		// 读取响应体
@@ -330,8 +324,11 @@ func (p *MirrorProxy) handleH1MITM(clientConn, targetConn net.Conn, domain strin
 			resp.ContentLength = int64(len(respBody))
 		}
 
-		// 写回客户端
 		resp.Write(clientConn)
+
+		if req.Close {
+			return
+		}
 	}
 }
 

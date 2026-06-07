@@ -141,12 +141,23 @@ func ParseAgentURI(uri string) (*AgentConfig, error) {
 	}, nil
 }
 
-// GetPublicIP 获取外网IP
+// GetPublicIP 获取外网IPv4地址
 func GetPublicIP() string {
 	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get("https://ip.sb")
+	// 使用ipv4.ip.sb强制获取IPv4地址
+	resp, err := client.Get("https://ipv4.ip.sb")
 	if err != nil {
-		return ""
+		// 回退尝试
+		resp2, err2 := client.Get("https://api.ipify.org")
+		if err2 != nil {
+			return ""
+		}
+		defer resp2.Body.Close()
+		ip, err2 := io.ReadAll(resp2.Body)
+		if err2 != nil {
+			return ""
+		}
+		return strings.TrimSpace(string(ip))
 	}
 	defer resp.Body.Close()
 	ip, err := io.ReadAll(resp.Body)

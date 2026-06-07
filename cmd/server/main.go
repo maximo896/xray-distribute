@@ -222,13 +222,19 @@ func main() {
 
 	// 输出Agent连接URI
 	agentURI := config.GenerateAgentURI(cfg)
+	publicIP := config.GetPublicIP()
+
+	displayHost := "localhost"
+	if publicIP != "" {
+		displayHost = publicIP
+	}
 
 	fmt.Println()
 	fmt.Println("========================================")
 	fmt.Println("  XRay-Distribute Server Started")
 	fmt.Println("========================================")
-	fmt.Printf("  Web Panel:  http://localhost%s\n", cfg.Server.HTTP)
-	fmt.Printf("  API:        http://localhost%s\n", cfg.Server.API)
+	fmt.Printf("  Web Panel:  http://%s%s\n", displayHost, cfg.Server.HTTP)
+	fmt.Printf("  API:        http://%s%s\n", displayHost, cfg.Server.API)
 	fmt.Println()
 	fmt.Println("  Agent连接命令（复制给Agent端执行）:")
 	fmt.Printf("  agent %s\n", agentURI)

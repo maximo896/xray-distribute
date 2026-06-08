@@ -1,66 +1,66 @@
 <template>
-  <el-container class="app-container">
-    <!-- 侧边栏 -->
-    <el-aside :width="isCollapse ? '64px' : '220px'" class="app-aside">
-      <div class="logo" @click="$router.push('/')">
-        <el-icon :size="28"><Monitor /></el-icon>
-        <span v-show="!isCollapse" class="logo-text">XRay Distribute</span>
-      </div>
+  <el-container class="app-shell">
+    <el-aside :width="isCollapse ? '72px' : '232px'" class="sidebar">
+      <button class="brand" @click="$router.push('/')">
+        <el-icon :size="24"><Monitor /></el-icon>
+        <span v-show="!isCollapse">XRay Distribute</span>
+      </button>
+
       <el-menu
         :default-active="$route.path"
         :collapse="isCollapse"
         router
-        class="app-menu"
-        background-color="#1d1e2c"
-        text-color="#a0a3bd"
-        active-text-color="#409eff"
+        class="nav"
+        background-color="transparent"
+        text-color="#9ca3af"
+        active-text-color="#f8fafc"
       >
         <el-menu-item index="/">
           <el-icon><DataAnalysis /></el-icon>
-          <template #title>仪表盘</template>
+          <template #title>总览</template>
         </el-menu-item>
         <el-menu-item index="/vulns">
           <el-icon><Warning /></el-icon>
-          <template #title>漏洞列表</template>
+          <template #title>漏洞</template>
         </el-menu-item>
         <el-menu-item index="/agents">
           <el-icon><Connection /></el-icon>
-          <template #title>Agent节点</template>
+          <template #title>Agent</template>
         </el-menu-item>
         <el-menu-item index="/xray">
           <el-icon><Cpu /></el-icon>
-          <template #title>XRay管理</template>
+          <template #title>XRay</template>
         </el-menu-item>
         <el-menu-item index="/webhooks">
           <el-icon><Bell /></el-icon>
-          <template #title>Webhook通知</template>
+          <template #title>通知</template>
         </el-menu-item>
       </el-menu>
     </el-aside>
 
-    <!-- 主内容区 -->
     <el-container>
-      <el-header class="app-header">
-        <div class="header-left">
-          <el-icon class="collapse-btn" @click="isCollapse = !isCollapse">
-            <Fold v-if="!isCollapse" />
-            <Expand v-else />
-          </el-icon>
+      <el-header class="topbar">
+        <div class="topbar-left">
+          <el-button :icon="isCollapse ? Expand : Fold" circle @click="isCollapse = !isCollapse" />
+          <div>
+            <div class="page-kicker">Passive Security Scanner</div>
+            <div class="page-name">{{ routeName }}</div>
+          </div>
         </div>
-        <div class="header-right">
-          <el-tag :type="connected ? 'success' : 'danger'" effect="dark" size="small">
-            {{ connected ? '已连接' : '未连接' }}
+        <div class="topbar-right">
+          <el-tag :type="connected ? 'success' : 'danger'" effect="plain">
+            {{ connected ? 'API 已连接' : 'API 未连接' }}
           </el-tag>
         </div>
       </el-header>
-      <el-main class="app-main">
+
+      <el-main class="main">
         <router-view />
       </el-main>
     </el-container>
 
-    <!-- Token设置弹窗 -->
-    <el-dialog v-model="showTokenDialog" title="设置连接Token" width="400px" :close-on-click-modal="false" :show-close="false">
-      <el-input v-model="token" placeholder="请输入Server的Token" type="password" show-password />
+    <el-dialog v-model="showTokenDialog" title="连接 Token" width="420px" :close-on-click-modal="false" :show-close="false">
+      <el-input v-model="token" placeholder="输入 server.token" type="password" show-password @keyup.enter="saveToken" />
       <template #footer>
         <el-button type="primary" @click="saveToken">连接</el-button>
       </template>
@@ -69,32 +69,48 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
+import { Expand, Fold } from '@element-plus/icons-vue'
 import api from './utils/api'
 
+const route = useRoute()
 const isCollapse = ref(false)
 const connected = ref(false)
 const showTokenDialog = ref(false)
 const token = ref('')
 
+const names = {
+  '/': '扫描总览',
+  '/vulns': '漏洞列表',
+  '/agents': 'Agent 节点',
+  '/xray': 'XRay 引擎',
+  '/webhooks': 'Webhook 通知',
+}
+
+const routeName = computed(() => names[route.path] || '控制台')
+
 const checkConnection = async () => {
+  const savedToken = localStorage.getItem('xray-token')
+  if (!savedToken) {
+    connected.value = false
+    showTokenDialog.value = true
+    return
+  }
   try {
     await api.get('/ping')
     connected.value = true
   } catch {
     connected.value = false
-    if (!localStorage.getItem('xray-token')) {
-      showTokenDialog.value = true
-    }
+    showTokenDialog.value = true
   }
 }
 
 const saveToken = () => {
-  if (token.value) {
-    localStorage.setItem('xray-token', token.value)
-    showTokenDialog.value = false
-    checkConnection()
-  }
+  if (!token.value) return
+  localStorage.setItem('xray-token', token.value)
+  showTokenDialog.value = false
+  checkConnection()
 }
 
 onMounted(() => {
@@ -106,127 +122,148 @@ onMounted(() => {
 
 <style>
 * {
-  margin: 0;
-  padding: 0;
   box-sizing: border-box;
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  background: #0f1021;
-  color: #e0e0e0;
+  margin: 0;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #e5e7eb;
+  background: #101214;
 }
 
-.app-container {
+.app-shell {
   height: 100vh;
 }
 
-.app-aside {
-  background: #1d1e2c;
-  transition: width 0.3s;
+.sidebar {
+  background: #171a1f;
+  border-right: 1px solid #2a2f36;
   overflow: hidden;
 }
 
-.logo {
-  height: 60px;
+.brand {
+  width: 100%;
+  height: 64px;
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 10px;
+  padding: 0 20px;
+  color: #f8fafc;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #2a2f36;
   cursor: pointer;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
-  color: #409eff;
-}
-
-.logo-text {
-  font-size: 16px;
   font-weight: 700;
-  white-space: nowrap;
-  background: linear-gradient(135deg, #409eff, #79bbff);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
 }
 
-.app-menu {
-  border-right: none;
+.nav {
+  border-right: 0 !important;
+  padding: 10px 8px;
 }
 
-.app-header {
-  background: #1a1b2e;
+.nav .el-menu-item {
+  height: 42px;
+  border-radius: 8px;
+  margin: 4px 0;
+}
+
+.nav .el-menu-item.is-active {
+  background: #243241 !important;
+}
+
+.topbar {
+  height: 64px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  padding: 0 24px;
+  background: #14171b;
+  border-bottom: 1px solid #2a2f36;
 }
 
-.collapse-btn {
-  cursor: pointer;
-  font-size: 20px;
-  color: #a0a3bd;
-  transition: color 0.2s;
+.topbar-left,
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 
-.collapse-btn:hover {
-  color: #409eff;
+.page-kicker {
+  color: #8b949e;
+  font-size: 12px;
+  line-height: 18px;
 }
 
-.app-main {
-  background: #0f1021;
-  padding: 20px;
-  overflow-y: auto;
+.page-name {
+  color: #f8fafc;
+  font-size: 18px;
+  font-weight: 700;
 }
 
-/* 自定义滚动条 */
-::-webkit-scrollbar {
-  width: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.1);
-  border-radius: 3px;
+.main {
+  background: #101214;
+  padding: 24px;
+  overflow: auto;
 }
 
-/* Element Plus 暗色覆盖 */
+.panel {
+  background: #171a1f;
+  border: 1px solid #2a2f36;
+  border-radius: 8px;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid #2a2f36;
+}
+
+.panel-title {
+  color: #f8fafc;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.muted {
+  color: #8b949e;
+}
+
 .el-card {
-  background: #1a1b2e !important;
-  border-color: rgba(255,255,255,0.06) !important;
-  color: #e0e0e0 !important;
+  --el-card-bg-color: #171a1f;
+  --el-card-border-color: #2a2f36;
+  color: #e5e7eb;
+  border-radius: 8px;
 }
-.el-card__header {
-  border-color: rgba(255,255,255,0.06) !important;
-  color: #e0e0e0 !important;
-}
+
 .el-table {
-  background: #1a1b2e !important;
-  --el-table-bg-color: #1a1b2e;
-  --el-table-tr-bg-color: #1a1b2e;
-  --el-table-header-bg-color: #232440;
-  --el-table-row-hover-bg-color: #232440;
-  --el-table-border-color: rgba(255,255,255,0.06);
-  --el-table-text-color: #c0c4cc;
-  --el-table-header-text-color: #e0e0e0;
+  --el-table-bg-color: #171a1f;
+  --el-table-tr-bg-color: #171a1f;
+  --el-table-header-bg-color: #1d2229;
+  --el-table-row-hover-bg-color: #20262d;
+  --el-table-border-color: #2a2f36;
+  --el-table-text-color: #d1d5db;
+  --el-table-header-text-color: #f8fafc;
 }
+
 .el-dialog {
-  background: #1a1b2e !important;
+  --el-dialog-bg-color: #171a1f;
 }
-.el-dialog__title {
-  color: #e0e0e0 !important;
-}
+
+.el-dialog__title,
 .el-form-item__label {
-  color: #a0a3bd !important;
+  color: #e5e7eb;
 }
+
 .el-input__wrapper {
-  background: #232440 !important;
+  background: #101214 !important;
+  box-shadow: 0 0 0 1px #2a2f36 inset !important;
 }
+
 .el-input__inner {
-  color: #e0e0e0 !important;
-}
-.el-pagination {
-  --el-pagination-bg-color: #1a1b2e;
-  --el-pagination-text-color: #a0a3bd;
-  --el-pagination-button-bg-color: #232440;
+  color: #f8fafc !important;
 }
 </style>

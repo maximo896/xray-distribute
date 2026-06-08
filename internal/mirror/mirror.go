@@ -17,15 +17,15 @@ import (
 
 // QueueStats 队列统计指标
 type QueueStats struct {
-	Name        string  `json:"name"`
-	Length      int     `json:"length"`       // 当前队列长度
-	Capacity    int     `json:"capacity"`     // 队列容量
-	UsagePct    float64 `json:"usage_pct"`    // 使用率 0-100
-	TotalIn     int64   `json:"total_in"`     // 总入队数
-	TotalOut    int64   `json:"total_out"`    // 总出队数
-	TotalDropped int64  `json:"total_dropped"` // 总丢弃数
-	RateIn      float64 `json:"rate_in"`      // 每秒入队速率
-	RateOut     float64 `json:"rate_out"`     // 每秒出队速率
+	Name         string  `json:"name"`
+	Length       int     `json:"length"`        // 当前队列长度
+	Capacity     int     `json:"capacity"`      // 队列容量
+	UsagePct     float64 `json:"usage_pct"`     // 使用率 0-100
+	TotalIn      int64   `json:"total_in"`      // 总入队数
+	TotalOut     int64   `json:"total_out"`     // 总出队数
+	TotalDropped int64   `json:"total_dropped"` // 总丢弃数
+	RateIn       float64 `json:"rate_in"`       // 每秒入队速率
+	RateOut      float64 `json:"rate_out"`      // 每秒出队速率
 }
 
 // FlowController 流速控制器
@@ -356,7 +356,6 @@ func (s *Sender) sendBatch(batch []*model.MirrorRequest) {
 // Receiver 远端Server的流量接收器
 type Receiver struct {
 	logger    *slog.Logger
-	xrayPipe  chan *model.MirrorRequest
 	onRequest func(*model.MirrorRequest)
 	counter   counter
 	capacity  int
@@ -368,7 +367,6 @@ func NewReceiver(logger *slog.Logger, maxQPS int) *Receiver {
 	capacity := 50000
 	return &Receiver{
 		logger:   logger,
-		xrayPipe: make(chan *model.MirrorRequest, capacity),
 		capacity: capacity,
 		flowCtrl: NewFlowController(maxQPS),
 	}
@@ -384,44 +382,54 @@ func (r *Receiver) HandleBatch(requests []*model.MirrorRequest) {
 	for _, req := range requests {
 		r.counter.IncrIn()
 
-		// 流速控制：队列使用率高时自适应降速
-		usagePct := float64(len(r.xrayPipe)) / float64(r.capacity) * 100
+		pending := r.counter.in.Load() - r.counter.out.Load() - r.counter.dropped.Load()
+		if pending < 0 {
+			pending = 0
+		}
+		usagePct := float64(pending) / float64(r.capacity) * 100
 		r.flowCtrl.AdaptQPS(usagePct)
 
-		// 限流检查
 		if !r.flowCtrl.TryWait() {
 			r.counter.IncrDrop()
 			continue
 		}
 
-		select {
-		case r.xrayPipe <- req:
-			// 推入XRay管道
-		default:
+		if pending > int64(r.capacity) {
 			r.counter.IncrDrop()
 			r.logger.Warn("xray pipe full, dropping request", "url", req.URL,
-				"pipe_len", len(r.xrayPipe), "total_dropped", r.counter.dropped.Load())
+				"pipe_len", pending, "total_dropped", r.counter.dropped.Load())
+			continue
 		}
 
 		if r.onRequest != nil {
 			r.onRequest(req)
+			r.counter.IncrOut()
+		} else {
+			r.counter.IncrDrop()
 		}
 	}
 }
 
 // XRayPipe 获取XRay管道（供XRay管理器消费）
 func (r *Receiver) XRayPipe() <-chan *model.MirrorRequest {
-	return r.xrayPipe
+	return nil
 }
 
 // Stats 获取接收器队列统计
 func (r *Receiver) Stats() QueueStats {
 	rateIn, rateOut := r.counter.Rates()
-	usagePct := float64(len(r.xrayPipe)) / float64(r.capacity) * 100
+	length := int(r.counter.in.Load() - r.counter.out.Load() - r.counter.dropped.Load())
+	if length < 0 {
+		length = 0
+	}
+	if length > r.capacity {
+		length = r.capacity
+	}
+	usagePct := float64(length) / float64(r.capacity) * 100
 
 	return QueueStats{
 		Name:         "xray_pipe",
-		Length:       len(r.xrayPipe),
+		Length:       length,
 		Capacity:     r.capacity,
 		UsagePct:     usagePct,
 		TotalIn:      r.counter.in.Load(),
@@ -435,10 +443,10 @@ func (r *Receiver) Stats() QueueStats {
 // FlowStats 获取流速控制状态
 func (r *Receiver) FlowStats() map[string]interface{} {
 	return map[string]interface{}{
-		"enabled":    r.flowCtrl.enabled,
+		"enabled":     r.flowCtrl.enabled,
 		"current_qps": r.flowCtrl.GetQPS(),
-		"max_qps":    r.flowCtrl.maxQPS,
-		"adaptive":   r.flowCtrl.adaptiveMode,
+		"max_qps":     r.flowCtrl.maxQPS,
+		"adaptive":    r.flowCtrl.adaptiveMode,
 	}
 }
 

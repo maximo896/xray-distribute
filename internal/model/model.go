@@ -4,24 +4,36 @@ import "time"
 
 // Agent 注册到Server的节点信息
 type Agent struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	IP          string    `json:"ip"`
-	Status      string    `json:"status"` // online, offline
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	IP            string    `json:"ip"`
+	Status        string    `json:"status"` // online, offline
 	LastHeartbeat time.Time `json:"last_heartbeat"`
-	CreatedAt   time.Time `json:"created_at"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 // XRayInstance XRay扫描实例
 type XRayInstance struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Status    string    `json:"status"` // running, stopped, error
-	Pid       int       `json:"pid,omitempty"`
-	Config    string    `json:"config"`
-	Plugin    string    `json:"plugin"` // passive, active, etc.
-	CreatedAt time.Time `json:"created_at"`
+	ID        string     `json:"id"`
+	Name      string     `json:"name"`
+	Status    string     `json:"status"` // running, stopped, error
+	Pid       int        `json:"pid,omitempty"`
+	Config    string     `json:"config"`
+	Plugin    string     `json:"plugin"` // passive, active, etc.
+	Listen    string     `json:"listen,omitempty"`
+	Webhook   string     `json:"webhook,omitempty"`
+	HTMLFile  string     `json:"html_file,omitempty"`
+	JSONFile  string     `json:"json_file,omitempty"`
+	LastError string     `json:"last_error,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
 	StartedAt *time.Time `json:"started_at,omitempty"`
+}
+
+// XRayLogEntry is one recent runtime event from the xray process.
+type XRayLogEntry struct {
+	Time    time.Time `json:"time"`
+	Level   string    `json:"level"`
+	Message string    `json:"message"`
 }
 
 // Vulnerability XRay发现的漏洞
@@ -55,25 +67,25 @@ type WebhookConfig struct {
 
 // MirrorRequest Agent发送镜像流量的请求体
 type MirrorRequest struct {
-	AgentID   string `json:"agent_id"`
-	Method    string `json:"method"`
-	URL       string `json:"url"`
+	AgentID   string              `json:"agent_id"`
+	Method    string              `json:"method"`
+	URL       string              `json:"url"`
 	Headers   map[string][]string `json:"headers"`
-	Body      []byte `json:"body"`
-	Timestamp int64  `json:"timestamp"`
-	Protocol  string `json:"protocol"` // http, websocket, h2
+	Body      []byte              `json:"body"`
+	Timestamp int64               `json:"timestamp"`
+	Protocol  string              `json:"protocol"` // http, websocket, h2
 }
 
 // TrafficStats 流量统计
 type TrafficStats struct {
-	TotalRequests   int64     `json:"total_requests"`
-	TodayRequests   int64     `json:"today_requests"`
-	TotalVulns      int64     `json:"total_vulns"`
-	HighVulns       int64     `json:"high_vulns"`
-	MediumVulns     int64     `json:"medium_vulns"`
-	LowVulns        int64     `json:"low_vulns"`
-	ActiveAgents    int64     `json:"active_agents"`
-	LastVulnTime    *time.Time `json:"last_vuln_time,omitempty"`
+	TotalRequests int64      `json:"total_requests"`
+	TodayRequests int64      `json:"today_requests"`
+	TotalVulns    int64      `json:"total_vulns"`
+	HighVulns     int64      `json:"high_vulns"`
+	MediumVulns   int64      `json:"medium_vulns"`
+	LowVulns      int64      `json:"low_vulns"`
+	ActiveAgents  int64      `json:"active_agents"`
+	LastVulnTime  *time.Time `json:"last_vuln_time,omitempty"`
 }
 
 // APIResponse 统一API响应

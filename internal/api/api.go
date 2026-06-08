@@ -60,6 +60,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/xray/start", s.auth(s.handleXRayStart))
 	mux.HandleFunc("/api/v1/xray/stop", s.auth(s.handleXRayStop))
 	mux.HandleFunc("/api/v1/xray/restart", s.auth(s.handleXRayRestart))
+	mux.HandleFunc("/api/v1/xray/logs", s.auth(s.handleXRayLogs))
 
 	// XRay Webhook接收（xray --webhook-output 发送到此端点，无需auth因为xray不带token）
 	mux.HandleFunc("/api/v1/xray/webhook", s.handleXRayWebhook)
@@ -224,6 +225,15 @@ func (s *Server) handleXRayRestart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.jsonResponse(w, http.StatusOK, "ok", nil)
+}
+
+// handleXRayLogs returns recent xray process logs.
+func (s *Server) handleXRayLogs(w http.ResponseWriter, r *http.Request) {
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 {
+		limit = 200
+	}
+	s.jsonResponse(w, http.StatusOK, "ok", s.xray.Logs(limit))
 }
 
 // handleXRayWebhook 接收XRay通过--webhook-output发送的漏洞数据

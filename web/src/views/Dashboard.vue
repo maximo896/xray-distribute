@@ -1,450 +1,344 @@
 <template>
   <div class="dashboard">
-    <h2 class="page-title">仪表盘</h2>
+    <section class="status-strip panel">
+      <div>
+        <div class="eyebrow">当前引擎</div>
+        <div class="engine-line">
+          <span class="status-dot" :class="xrayStatus.status"></span>
+          <strong>{{ statusLabel(xrayStatus.status) }}</strong>
+          <span class="muted">{{ xrayStatus.listen || '-' }}</span>
+        </div>
+      </div>
+      <div class="status-actions">
+        <el-button :icon="Refresh" @click="refreshAll">刷新</el-button>
+        <el-button type="primary" :icon="VideoPlay" :disabled="xrayStatus.status === 'running'" @click="startXRay">启动监听</el-button>
+      </div>
+    </section>
 
-    <!-- 统计卡片 -->
-    <el-row :gutter="20" class="stat-row">
-      <el-col :span="6">
-        <el-card shadow="hover" class="stat-card">
-          <div class="stat-icon" style="background: linear-gradient(135deg, #409eff, #79bbff)">
-            <el-icon :size="28"><Connection /></el-icon>
-          </div>
-          <div class="stat-info">
-            <div class="stat-value">{{ stats.active_agents }}</div>
-            <div class="stat-label">在线Agent</div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :span="6">
-        <el-card shadow="hover" class="stat-card">
-          <div class="stat-icon" style="background: linear-gradient(135deg, #67c23a, #95d475)">
-            <el-icon :size="28"><Promotion /></el-icon>
-          </div>
-          <div class="stat-info">
-            <div class="stat-value">{{ formatNumber(stats.today_requests) }}</div>
-            <div class="stat-label">今日流量</div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :span="6">
-        <el-card shadow="hover" class="stat-card">
-          <div class="stat-icon" style="background: linear-gradient(135deg, #f56c6c, #fab6b6)">
-            <el-icon :size="28"><Warning /></el-icon>
-          </div>
-          <div class="stat-info">
-            <div class="stat-value">{{ stats.total_vulns }}</div>
-            <div class="stat-label">漏洞总数</div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :span="6">
-        <el-card shadow="hover" class="stat-card">
-          <div class="stat-icon" style="background: linear-gradient(135deg, #e6a23c, #eebe77)">
-            <el-icon :size="28"><TrendCharts /></el-icon>
-          </div>
-          <div class="stat-info">
-            <div class="stat-value">{{ stats.high_vulns }}</div>
-            <div class="stat-label">高危漏洞</div>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
+    <section class="metrics">
+      <div class="metric panel">
+        <div class="metric-label">在线 Agent</div>
+        <div class="metric-value">{{ stats.active_agents || 0 }}</div>
+      </div>
+      <div class="metric panel">
+        <div class="metric-label">今日流量</div>
+        <div class="metric-value">{{ formatNumber(stats.today_requests) }}</div>
+      </div>
+      <div class="metric panel">
+        <div class="metric-label">已送入 XRay</div>
+        <div class="metric-value">{{ formatNumber(queueStats.total_out) }}</div>
+      </div>
+      <div class="metric panel danger">
+        <div class="metric-label">漏洞总数</div>
+        <div class="metric-value">{{ formatNumber(stats.total_vulns) }}</div>
+      </div>
+    </section>
 
-    <!-- 队列监控 -->
-    <el-row :gutter="20" style="margin-top: 20px">
-      <el-col :span="12">
-        <el-card shadow="hover">
-          <template #header>
-            <div style="display:flex;justify-content:space-between;align-items:center">
-              <span>XRay管道队列</span>
-              <el-tag :type="queueHealth" size="small">{{ queueHealthText }}</el-tag>
+    <section class="grid">
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">扫描流</div>
+            <div class="muted">接收、限流、送入 XRay 的实时情况</div>
+          </div>
+          <el-tag :type="queueHealth.type" effect="plain">{{ queueHealth.text }}</el-tag>
+        </div>
+        <div class="flow-body">
+          <div class="queue-bar">
+            <div :style="{ width: `${queueUsagePct}%` }"></div>
+          </div>
+          <div class="flow-grid">
+            <div>
+              <span>待处理</span>
+              <strong>{{ formatNumber(queueStats.length) }} / {{ formatNumber(queueStats.capacity) }}</strong>
             </div>
-          </template>
-          <div class="queue-monitor">
-            <div class="queue-bar-wrap">
-              <div class="queue-bar" :style="{ width: queueUsagePct + '%' }" :class="queueBarClass"></div>
+            <div>
+              <span>接收速率</span>
+              <strong>{{ fixed(queueStats.rate_in) }}/s</strong>
             </div>
-            <div class="queue-detail">
-              <div class="queue-detail-item">
-                <span class="queue-label">队列深度</span>
-                <span class="queue-value">{{ formatNumber(queueStats.length) }} / {{ formatNumber(queueStats.capacity) }}</span>
-              </div>
-              <div class="queue-detail-item">
-                <span class="queue-label">使用率</span>
-                <span class="queue-value">{{ queueUsagePct.toFixed(1) }}%</span>
-              </div>
-              <div class="queue-detail-item">
-                <span class="queue-label">入队速率</span>
-                <span class="queue-value">{{ queueStats.rate_in?.toFixed(1) || 0 }} /s</span>
-              </div>
-              <div class="queue-detail-item">
-                <span class="queue-label">出队速率</span>
-                <span class="queue-value">{{ queueStats.rate_out?.toFixed(1) || 0 }} /s</span>
-              </div>
-              <div class="queue-detail-item">
-                <span class="queue-label">总入队</span>
-                <span class="queue-value">{{ formatNumber(queueStats.total_in) }}</span>
-              </div>
-              <div class="queue-detail-item">
-                <span class="queue-label">总丢弃</span>
-                <span class="queue-value" :style="{ color: queueStats.total_dropped > 0 ? '#f56c6c' : '' }">{{ formatNumber(queueStats.total_dropped) }}</span>
-              </div>
+            <div>
+              <span>送入速率</span>
+              <strong>{{ fixed(queueStats.rate_out) }}/s</strong>
+            </div>
+            <div>
+              <span>丢弃</span>
+              <strong :class="{ bad: queueStats.total_dropped > 0 }">{{ formatNumber(queueStats.total_dropped) }}</strong>
             </div>
           </div>
-        </el-card>
-      </el-col>
-      <el-col :span="12">
-        <el-card shadow="hover">
-          <template #header>
-            <div style="display:flex;justify-content:space-between;align-items:center">
-              <span>流速控制</span>
-              <el-tag :type="flowCtrl.enabled ? 'success' : 'info'" size="small">{{ flowCtrl.enabled ? '已启用' : '未启用' }}</el-tag>
-            </div>
-          </template>
-          <div class="flow-ctrl">
-            <div class="flow-ctrl-item">
-              <span class="queue-label">当前QPS限制</span>
-              <span class="queue-value" style="font-size:24px;font-weight:700;color:#409eff">{{ flowCtrl.current_qps || 0 }}</span>
-            </div>
-            <div class="flow-ctrl-item">
-              <span class="queue-label">最大QPS</span>
-              <span class="queue-value">{{ flowCtrl.max_qps || 0 }}</span>
-            </div>
-            <div class="flow-ctrl-item">
-              <span class="queue-label">自适应模式</span>
-              <el-tag :type="flowCtrl.adaptive ? 'success' : 'info'" size="small">{{ flowCtrl.adaptive ? '开启' : '关闭' }}</el-tag>
-            </div>
-            <el-divider />
-            <div class="flow-ctrl-item">
-              <span class="queue-label">手动调整QPS</span>
-              <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
-                <el-input-number v-model="manualQPS" :min="10" :max="5000" :step="50" size="small" />
-                <el-button type="primary" size="small" @click="setQPS">应用</el-button>
-              </div>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
+        </div>
+      </div>
 
-    <!-- 漏洞等级分布 -->
-    <el-row :gutter="20" style="margin-top: 20px">
-      <el-col :span="12">
-        <el-card shadow="hover">
-          <template #header>
-            <span>漏洞等级分布</span>
-          </template>
-          <div class="severity-chart">
-            <div class="severity-item">
-              <span class="severity-label">高危</span>
-              <el-progress :percentage="highPercent" :stroke-width="20" color="#f56c6c" />
-              <span class="severity-count">{{ stats.high_vulns }}</span>
-            </div>
-            <div class="severity-item">
-              <span class="severity-label">中危</span>
-              <el-progress :percentage="mediumPercent" :stroke-width="20" color="#e6a23c" />
-              <span class="severity-count">{{ stats.medium_vulns }}</span>
-            </div>
-            <div class="severity-item">
-              <span class="severity-label">低危</span>
-              <el-progress :percentage="lowPercent" :stroke-width="20" color="#67c23a" />
-              <span class="severity-count">{{ stats.low_vulns }}</span>
-            </div>
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">漏洞分布</div>
+            <div class="muted">按风险等级统计</div>
           </div>
-        </el-card>
-      </el-col>
-      <el-col :span="12">
-        <el-card shadow="hover">
-          <template #header>
-            <span>流量概览</span>
-          </template>
-          <div class="traffic-overview">
-            <div class="traffic-item">
-              <el-icon :size="40" color="#409eff"><Promotion /></el-icon>
-              <div>
-                <div class="traffic-value">{{ formatNumber(stats.total_requests) }}</div>
-                <div class="traffic-label">总流量数</div>
-              </div>
-            </div>
-            <el-divider />
-            <div class="traffic-item">
-              <el-icon :size="40" color="#67c23a"><Promotion /></el-icon>
-              <div>
-                <div class="traffic-value">{{ formatNumber(stats.today_requests) }}</div>
-                <div class="traffic-label">今日流量</div>
-              </div>
-            </div>
+        </div>
+        <div class="severity-list">
+          <div class="severity high">
+            <span>高危</span>
+            <el-progress :percentage="percent(stats.high_vulns)" :stroke-width="10" color="#ef4444" />
+            <strong>{{ stats.high_vulns || 0 }}</strong>
           </div>
-        </el-card>
-      </el-col>
-    </el-row>
+          <div class="severity medium">
+            <span>中危</span>
+            <el-progress :percentage="percent(stats.medium_vulns)" :stroke-width="10" color="#f59e0b" />
+            <strong>{{ stats.medium_vulns || 0 }}</strong>
+          </div>
+          <div class="severity low">
+            <span>低危</span>
+            <el-progress :percentage="percent(stats.low_vulns)" :stroke-width="10" color="#22c55e" />
+            <strong>{{ stats.low_vulns || 0 }}</strong>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">最近 XRay 日志</div>
+          <div class="muted">{{ xrayStatus.last_error || '启动、监听、转发失败和漏洞回调都会显示在这里' }}</div>
+        </div>
+        <el-button :icon="Document" @click="$router.push('/xray')">查看详情</el-button>
+      </div>
+      <div class="log-preview">
+        <div v-for="item in logs.slice(-8)" :key="`${item.time}-${item.message}`" class="log-row">
+          <span>{{ formatTime(item.time) }}</span>
+          <el-tag :type="logType(item.level)" size="small" effect="plain">{{ item.level }}</el-tag>
+          <code>{{ item.message }}</code>
+        </div>
+        <el-empty v-if="logs.length === 0" description="暂无日志" :image-size="72" />
+      </div>
+    </section>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Document, Refresh, VideoPlay } from '@element-plus/icons-vue'
 import api from '../utils/api'
 
-const stats = ref({
-  total_requests: 0,
-  today_requests: 0,
-  total_vulns: 0,
-  high_vulns: 0,
-  medium_vulns: 0,
-  low_vulns: 0,
-  active_agents: 0,
-})
+const stats = ref({})
+const queueStats = ref({})
+const xrayStatus = ref({ status: 'stopped' })
+const logs = ref([])
 
-const queueStats = ref({
-  length: 0,
-  capacity: 0,
-  usage_pct: 0,
-  total_in: 0,
-  total_out: 0,
-  total_dropped: 0,
-  rate_in: 0,
-  rate_out: 0,
-})
-
-const flowCtrl = ref({
-  enabled: false,
-  current_qps: 0,
-  max_qps: 0,
-  adaptive: false,
-})
-
-const manualQPS = ref(500)
-
-const queueUsagePct = computed(() => queueStats.value.usage_pct || 0)
-
+const queueUsagePct = computed(() => Math.min(100, Math.max(0, queueStats.value.usage_pct || 0)))
 const queueHealth = computed(() => {
-  const pct = queueUsagePct.value
-  if (pct > 80) return 'danger'
-  if (pct > 60) return 'warning'
-  return 'success'
+  if ((queueStats.value.total_dropped || 0) > 0) return { type: 'danger', text: '有丢弃' }
+  if (queueUsagePct.value > 70) return { type: 'warning', text: '压力偏高' }
+  return { type: 'success', text: '正常' }
 })
 
-const queueHealthText = computed(() => {
-  const pct = queueUsagePct.value
-  if (pct > 80) return '危险'
-  if (pct > 60) return '偏高'
-  return '正常'
-})
-
-const queueBarClass = computed(() => {
-  const pct = queueUsagePct.value
-  if (pct > 80) return 'bar-danger'
-  if (pct > 60) return 'bar-warning'
-  return 'bar-ok'
-})
-
-const highPercent = computed(() => {
-  if (!stats.value.total_vulns) return 0
-  return Math.round((stats.value.high_vulns / stats.value.total_vulns) * 100)
-})
-
-const mediumPercent = computed(() => {
-  if (!stats.value.total_vulns) return 0
-  return Math.round((stats.value.medium_vulns / stats.value.total_vulns) * 100)
-})
-
-const lowPercent = computed(() => {
-  if (!stats.value.total_vulns) return 0
-  return Math.round((stats.value.low_vulns / stats.value.total_vulns) * 100)
-})
-
-const formatNumber = (n) => {
-  if (!n) return '0'
-  return n.toLocaleString()
-}
-
-const setQPS = async () => {
-  try {
-    const res = await api.post('/queue/flow', { max_qps: manualQPS.value })
-    if (res.code === 200) {
-      ElMessage.success(`QPS已调整为 ${manualQPS.value}`)
-      fetchQueueStats()
-    }
-  } catch {}
-}
+const formatNumber = (n) => Number(n || 0).toLocaleString()
+const fixed = (n) => Number(n || 0).toFixed(1)
+const percent = (n) => stats.value.total_vulns ? Math.round((Number(n || 0) / stats.value.total_vulns) * 100) : 0
+const statusLabel = (s) => ({ running: '监听中', stopped: '未运行', error: '异常' }[s] || '未知')
+const logType = (level) => ({ error: 'danger', warn: 'warning', info: 'info' }[level] || 'info')
+const formatTime = (t) => (t ? new Date(t).toLocaleTimeString('zh-CN', { hour12: false }) : '-')
 
 const fetchStats = async () => {
-  try {
-    const res = await api.get('/vulns/stats')
-    if (res.code === 200) {
-      stats.value = res.data
-    }
-  } catch {}
+  const res = await api.get('/vulns/stats')
+  if (res.code === 200) stats.value = res.data || {}
 }
 
-const fetchQueueStats = async () => {
-  try {
-    const res = await api.get('/queue/stats')
-    if (res.code === 200) {
-      queueStats.value = res.data.xray_pipe || {}
-      flowCtrl.value = res.data.flow_ctrl || {}
-    }
-  } catch {}
+const fetchQueue = async () => {
+  const res = await api.get('/queue/stats')
+  if (res.code === 200) queueStats.value = res.data?.xray_pipe || {}
 }
 
-let timer = null
+const fetchXRay = async () => {
+  const [statusRes, logRes] = await Promise.all([
+    api.get('/xray/status'),
+    api.get('/xray/logs?limit=80'),
+  ])
+  if (statusRes.code === 200) xrayStatus.value = statusRes.data || { status: 'stopped' }
+  if (logRes.code === 200) logs.value = logRes.data || []
+}
+
+const refreshAll = () => Promise.all([fetchStats(), fetchQueue(), fetchXRay()])
+
+const startXRay = async () => {
+  const res = await api.post('/xray/start')
+  if (res.code === 200) {
+    ElMessage.success('XRay 已启动')
+    refreshAll()
+  } else {
+    ElMessage.error(res.message || '启动失败')
+  }
+}
+
+let timer
 onMounted(() => {
-  fetchStats()
-  fetchQueueStats()
-  timer = setInterval(() => {
-    fetchStats()
-    fetchQueueStats()
-  }, 3000) // 队列3秒刷新
+  refreshAll()
+  timer = setInterval(refreshAll, 3000)
 })
-
-onUnmounted(() => {
-  if (timer) clearInterval(timer)
-})
+onUnmounted(() => clearInterval(timer))
 </script>
 
 <style scoped>
-.page-title {
-  font-size: 22px;
-  font-weight: 600;
-  margin-bottom: 20px;
-  color: #e0e0e0;
-}
-.stat-card {
-  display: flex;
-  align-items: center;
-  padding: 0;
-}
-.stat-card :deep(.el-card__body) {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 20px;
-  width: 100%;
-}
-.stat-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  flex-shrink: 0;
-}
-.stat-value {
-  font-size: 28px;
-  font-weight: 700;
-  color: #e0e0e0;
-}
-.stat-label {
-  font-size: 13px;
-  color: #a0a3bd;
-  margin-top: 4px;
-}
-.severity-chart {
+.dashboard {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  padding: 10px 0;
+  gap: 18px;
 }
-.severity-item {
+
+.status-strip {
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: space-between;
+  padding: 18px;
 }
-.severity-label {
-  width: 40px;
-  font-size: 14px;
-  color: #a0a3bd;
+
+.eyebrow,
+.metric-label {
+  color: #8b949e;
+  font-size: 12px;
 }
-.severity-item :deep(.el-progress) {
-  flex: 1;
-}
-.severity-count {
-  width: 40px;
-  text-align: right;
-  font-size: 16px;
-  font-weight: 600;
-  color: #e0e0e0;
-}
-.traffic-overview {
-  padding: 10px 0;
-}
-.traffic-item {
+
+.engine-line {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 10px 0;
+  gap: 10px;
+  margin-top: 6px;
+  font-size: 20px;
 }
-.traffic-value {
-  font-size: 24px;
-  font-weight: 700;
-  color: #e0e0e0;
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #6b7280;
 }
-.traffic-label {
-  font-size: 13px;
-  color: #a0a3bd;
+
+.status-dot.running {
+  background: #22c55e;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, .12);
 }
-.queue-monitor {
-  padding: 10px 0;
+
+.status-dot.error {
+  background: #ef4444;
 }
-.queue-bar-wrap {
-  height: 24px;
-  background: #1d1e2c;
-  border-radius: 12px;
-  overflow: hidden;
-  margin-bottom: 16px;
+
+.status-actions {
+  display: flex;
+  gap: 10px;
 }
-.queue-bar {
-  height: 100%;
-  border-radius: 12px;
-  transition: width 0.5s ease, background 0.3s ease;
-  min-width: 2px;
-}
-.queue-bar.bar-ok {
-  background: linear-gradient(90deg, #67c23a, #95d475);
-}
-.queue-bar.bar-warning {
-  background: linear-gradient(90deg, #e6a23c, #eebe77);
-}
-.queue-bar.bar-danger {
-  background: linear-gradient(90deg, #f56c6c, #fab6b6);
-  animation: pulse 1.5s infinite;
-}
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
-}
-.queue-detail {
+
+.metrics {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
 }
-.queue-detail-item {
-  display: flex;
-  justify-content: space-between;
+
+.metric {
+  padding: 16px;
+}
+
+.metric-value {
+  margin-top: 8px;
+  color: #f8fafc;
+  font-size: 30px;
+  font-weight: 800;
+}
+
+.metric.danger .metric-value {
+  color: #f87171;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1.25fr .75fr;
+  gap: 18px;
+}
+
+.flow-body,
+.severity-list,
+.log-preview {
+  padding: 18px;
+}
+
+.queue-bar {
+  height: 10px;
+  overflow: hidden;
+  background: #0f1720;
+  border-radius: 999px;
+}
+
+.queue-bar div {
+  height: 100%;
+  background: linear-gradient(90deg, #14b8a6, #f59e0b);
+  transition: width .25s ease;
+}
+
+.flow-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.flow-grid div {
+  padding: 12px;
+  background: #101419;
+  border: 1px solid #2a2f36;
+  border-radius: 8px;
+}
+
+.flow-grid span,
+.severity span {
+  display: block;
+  color: #8b949e;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.flow-grid strong,
+.severity strong {
+  color: #f8fafc;
+}
+
+.bad {
+  color: #f87171 !important;
+}
+
+.severity {
+  display: grid;
+  grid-template-columns: 48px 1fr 42px;
   align-items: center;
-  padding: 6px 12px;
-  background: #1d1e2c;
-  border-radius: 6px;
+  gap: 10px;
+  margin-bottom: 18px;
 }
-.queue-label {
-  font-size: 13px;
-  color: #a0a3bd;
-}
-.queue-value {
-  font-size: 14px;
-  font-weight: 600;
-  color: #e0e0e0;
-}
-.flow-ctrl {
-  padding: 10px 0;
-}
-.flow-ctrl-item {
-  display: flex;
-  justify-content: space-between;
+
+.log-row {
+  display: grid;
+  grid-template-columns: 86px 62px 1fr;
+  gap: 10px;
   align-items: center;
-  padding: 8px 0;
+  min-height: 32px;
+  color: #cbd5e1;
+}
+
+.log-row code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #d1d5db;
+}
+
+@media (max-width: 980px) {
+  .metrics,
+  .grid,
+  .flow-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .status-strip {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 </style>

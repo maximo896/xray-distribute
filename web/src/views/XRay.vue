@@ -1,211 +1,274 @@
 <template>
   <div class="xray-page">
-    <h2 class="page-title">XRay管理</h2>
-
-    <!-- XRay状态卡片 -->
-    <el-card shadow="hover" style="margin-bottom: 20px">
-      <template #header>
-        <div style="display: flex; justify-content: space-between; align-items: center">
-          <span>XRay扫描引擎</span>
-          <div>
-            <el-button type="success" @click="startXRay" :loading="actionLoading" :disabled="status?.status === 'running'">
-              <el-icon><VideoPlay /></el-icon>启动
-            </el-button>
-            <el-button type="danger" @click="stopXRay" :loading="actionLoading" :disabled="status?.status !== 'running'">
-              <el-icon><VideoPause /></el-icon>停止
-            </el-button>
-            <el-button type="warning" @click="restartXRay" :loading="actionLoading">
-              <el-icon><RefreshRight /></el-icon>重启
-            </el-button>
-          </div>
+    <section class="hero panel">
+      <div>
+        <div class="muted">XRay Passive Engine</div>
+        <div class="hero-title">
+          <span class="status-dot" :class="status.status"></span>
+          {{ statusLabel(status.status) }}
         </div>
-      </template>
+        <div class="hero-meta">
+          <span>监听 {{ status.listen || '-' }}</span>
+          <span>PID {{ status.pid || '-' }}</span>
+          <span>启动 {{ status.started_at ? formatDate(status.started_at) : '-' }}</span>
+        </div>
+      </div>
+      <div class="actions">
+        <el-button type="success" :icon="VideoPlay" :loading="loading" :disabled="status.status === 'running'" @click="startXRay">启动</el-button>
+        <el-button type="warning" :icon="RefreshRight" :loading="loading" @click="restartXRay">重启</el-button>
+        <el-button type="danger" :icon="VideoPause" :loading="loading" :disabled="status.status !== 'running'" @click="stopXRay">停止</el-button>
+      </div>
+    </section>
 
-      <el-descriptions :column="3" border>
-        <el-descriptions-item label="运行状态">
-          <el-tag :type="status?.status === 'running' ? 'success' : status?.status === 'error' ? 'danger' : 'info'" effect="dark">
-            {{ statusLabel(status?.status) }}
-          </el-tag>
-        </el-descriptions-item>
-        <el-descriptions-item label="进程PID">
-          {{ status?.pid || '-' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="启动时间">
-          {{ status?.started_at ? formatTime(status.started_at) : '-' }}
-        </el-descriptions-item>
-      </el-descriptions>
-    </el-card>
+    <section v-if="status.last_error" class="error panel">
+      <el-icon><Warning /></el-icon>
+      <span>{{ status.last_error }}</span>
+    </section>
 
-    <!-- XRay工作模式说明 -->
-    <el-row :gutter="20">
-      <el-col :span="12">
-        <el-card shadow="hover">
-          <template #header>
-            <span>被动扫描模式</span>
-          </template>
-          <div class="mode-desc">
-            <el-icon :size="48" color="#409eff"><Connection /></el-icon>
-            <p>XRay以被动扫描模式运行，监听 <code>127.0.0.1:7777</code></p>
-            <p>Agent镜像的流量通过HTTP代理方式发送到XRay</p>
-            <p>发现漏洞后自动通过Webhook通知</p>
-            <el-tag type="success" effect="dark" style="margin-top: 12px">当前模式</el-tag>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :span="12">
-        <el-card shadow="hover">
-          <template #header>
-            <span>工作流程</span>
-          </template>
-          <div class="flow-steps">
-            <div class="flow-step">
-              <el-icon :size="24" color="#409eff"><Promotion /></el-icon>
-              <span>业务流量</span>
-            </div>
-            <el-icon class="flow-arrow"><ArrowRight /></el-icon>
-            <div class="flow-step">
-              <el-icon :size="24" color="#67c23a"><Connection /></el-icon>
-              <span>Agent镜像</span>
-            </div>
-            <el-icon class="flow-arrow"><ArrowRight /></el-icon>
-            <div class="flow-step">
-              <el-icon :size="24" color="#e6a23c"><Cpu /></el-icon>
-              <span>XRay扫描</span>
-            </div>
-            <el-icon class="flow-arrow"><ArrowRight /></el-icon>
-            <div class="flow-step">
-              <el-icon :size="24" color="#f56c6c"><Bell /></el-icon>
-              <span>漏洞通知</span>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
+    <section class="info-grid">
+      <div class="panel info-card">
+        <span>监听地址</span>
+        <code>{{ status.listen || '-' }}</code>
+      </div>
+      <div class="panel info-card">
+        <span>Webhook</span>
+        <code>{{ status.webhook || '-' }}</code>
+      </div>
+      <div class="panel info-card">
+        <span>配置文件</span>
+        <code>{{ status.config || 'data/config.yaml' }}</code>
+      </div>
+      <div class="panel info-card">
+        <span>JSON 输出</span>
+        <code>{{ status.json_file || '-' }}</code>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">扫描日志</div>
+          <div class="muted">stdout、stderr、代理转发失败、漏洞回调都会进入这里</div>
+        </div>
+        <div class="toolbar">
+          <el-switch v-model="autoRefresh" active-text="自动刷新" />
+          <el-button :icon="Refresh" @click="fetchAll">刷新</el-button>
+        </div>
+      </div>
+
+      <div class="log-table">
+        <div v-for="item in logs" :key="`${item.time}-${item.message}`" class="log-line" :class="item.level">
+          <span class="time">{{ formatTime(item.time) }}</span>
+          <el-tag :type="logType(item.level)" size="small" effect="plain">{{ item.level }}</el-tag>
+          <code>{{ item.message }}</code>
+        </div>
+        <el-empty v-if="logs.length === 0" description="暂无日志" :image-size="96" />
+      </div>
+    </section>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import api from '../utils/api'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Refresh, RefreshRight, VideoPause, VideoPlay } from '@element-plus/icons-vue'
+import api from '../utils/api'
 
-const status = ref(null)
-const actionLoading = ref(false)
+const status = ref({ status: 'stopped' })
+const logs = ref([])
+const loading = ref(false)
+const autoRefresh = ref(true)
 
-const statusLabel = (s) => ({ running: '运行中', stopped: '已停止', error: '异常' }[s] || '未知')
-
-const formatTime = (t) => {
-  if (!t) return '-'
-  return new Date(t).toLocaleString('zh-CN')
-}
+const statusLabel = (s) => ({ running: '正在监听', stopped: '已停止', error: '异常退出' }[s] || '未知')
+const logType = (level) => ({ error: 'danger', warn: 'warning', info: 'info' }[level] || 'info')
+const formatDate = (t) => new Date(t).toLocaleString('zh-CN', { hour12: false })
+const formatTime = (t) => (t ? new Date(t).toLocaleTimeString('zh-CN', { hour12: false }) : '-')
 
 const fetchStatus = async () => {
-  try {
-    const res = await api.get('/xray/status')
-    if (res.code === 200) {
-      status.value = res.data
-    }
-  } catch {}
+  const res = await api.get('/xray/status')
+  if (res.code === 200) status.value = res.data || { status: 'stopped' }
 }
 
-const startXRay = async () => {
-  actionLoading.value = true
+const fetchLogs = async () => {
+  const res = await api.get('/xray/logs?limit=300')
+  if (res.code === 200) logs.value = res.data || []
+}
+
+const fetchAll = () => Promise.all([fetchStatus(), fetchLogs()])
+
+const runAction = async (path, okText) => {
+  loading.value = true
   try {
-    const res = await api.post('/xray/start')
+    const res = await api.post(path)
     if (res.code === 200) {
-      ElMessage.success('XRay启动成功')
-      setTimeout(fetchStatus, 2000)
+      ElMessage.success(okText)
     } else {
-      ElMessage.error(res.message)
+      ElMessage.error(res.message || '操作失败')
     }
-  } catch {
-    ElMessage.error('启动失败')
+  } catch (err) {
+    ElMessage.error(err?.response?.data?.message || '操作失败')
   } finally {
-    actionLoading.value = false
+    loading.value = false
+    setTimeout(fetchAll, 600)
   }
 }
 
-const stopXRay = async () => {
-  actionLoading.value = true
-  try {
-    const res = await api.post('/xray/stop')
-    if (res.code === 200) {
-      ElMessage.success('XRay已停止')
-      fetchStatus()
-    } else {
-      ElMessage.error(res.message)
-    }
-  } catch {
-    ElMessage.error('停止失败')
-  } finally {
-    actionLoading.value = false
-  }
-}
+const startXRay = () => runAction('/xray/start', 'XRay 已启动')
+const stopXRay = () => runAction('/xray/stop', 'XRay 已停止')
+const restartXRay = () => runAction('/xray/restart', 'XRay 已重启')
 
-const restartXRay = async () => {
-  actionLoading.value = true
-  try {
-    const res = await api.post('/xray/restart')
-    if (res.code === 200) {
-      ElMessage.success('XRay重启成功')
-      setTimeout(fetchStatus, 2000)
-    } else {
-      ElMessage.error(res.message)
-    }
-  } catch {
-    ElMessage.error('重启失败')
-  } finally {
-    actionLoading.value = false
-  }
-}
-
+let timer
 onMounted(() => {
-  fetchStatus()
-  setInterval(fetchStatus, 5000)
+  fetchAll()
+  timer = setInterval(() => {
+    if (autoRefresh.value) fetchAll()
+  }, 2500)
 })
+onUnmounted(() => clearInterval(timer))
 </script>
 
 <style scoped>
-.page-title {
-  font-size: 22px;
-  font-weight: 600;
-  margin-bottom: 20px;
-  color: #e0e0e0;
-}
-.mode-desc {
-  text-align: center;
-  padding: 20px 0;
-}
-.mode-desc p {
-  margin: 8px 0;
-  color: #a0a3bd;
-  font-size: 14px;
-}
-.mode-desc code {
-  background: #232440;
-  padding: 2px 8px;
-  border-radius: 4px;
-  color: #409eff;
-}
-.flow-steps {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 30px 0;
-}
-.flow-step {
+.xray-page {
   display: flex;
   flex-direction: column;
+  gap: 18px;
+}
+
+.hero {
+  display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  padding: 22px;
 }
-.flow-step span {
-  font-size: 13px;
-  color: #a0a3bd;
+
+.hero-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+  color: #f8fafc;
+  font-size: 30px;
+  font-weight: 800;
 }
-.flow-arrow {
-  color: #409eff;
-  font-size: 20px;
+
+.hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 12px;
+  color: #9ca3af;
+}
+
+.actions,
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.status-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #6b7280;
+}
+
+.status-dot.running {
+  background: #22c55e;
+  box-shadow: 0 0 0 5px rgba(34, 197, 94, .13);
+}
+
+.status-dot.error {
+  background: #ef4444;
+}
+
+.error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  color: #fecaca;
+  border-color: rgba(239, 68, 68, .45);
+  background: rgba(127, 29, 29, .2);
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.info-card {
+  min-height: 96px;
+  padding: 16px;
+}
+
+.info-card span {
+  display: block;
+  color: #8b949e;
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+
+.info-card code {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #f8fafc;
+}
+
+.log-table {
+  max-height: calc(100vh - 430px);
+  min-height: 320px;
+  overflow: auto;
+  padding: 10px 0;
+}
+
+.log-line {
+  display: grid;
+  grid-template-columns: 92px 70px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 8px 18px;
+  border-bottom: 1px solid rgba(42, 47, 54, .65);
+}
+
+.log-line:hover {
+  background: #1d2229;
+}
+
+.log-line .time {
+  color: #8b949e;
+  font-variant-numeric: tabular-nums;
+}
+
+.log-line code {
+  color: #d1d5db;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.log-line.error code {
+  color: #fecaca;
+}
+
+@media (max-width: 1100px) {
+  .info-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .hero,
+  .panel-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .info-grid,
+  .log-line {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

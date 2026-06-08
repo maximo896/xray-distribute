@@ -113,10 +113,10 @@ const form = reactive({
 })
 
 const supportedTypes = [
-  { type: 'dingtalk', name: '钉钉', desc: '钉钉群机器人', icon: 'ChatDotRound', color: '#409eff' },
-  { type: 'wecom', name: '企业微信', desc: '企业微信群机器人', icon: 'ChatLineSquare', color: '#67c23a' },
-  { type: 'lark', name: '飞书', desc: '飞书群机器人', icon: 'Message', color: '#e6a23c' },
-  { type: 'custom', name: '自定义', desc: '自定义Webhook', icon: 'Setting', color: '#909399' },
+  { type: 'dingtalk', name: '钉钉', desc: '钉钉群机器人', icon: 'ChatDotRound', color: '#1f6feb' },
+  { type: 'wecom', name: '企业微信', desc: '企业微信群机器人', icon: 'ChatLineSquare', color: '#198754' },
+  { type: 'lark', name: '飞书', desc: '飞书群机器人', icon: 'Message', color: '#b7791f' },
+  { type: 'custom', name: '自定义', desc: '自定义Webhook', icon: 'Setting', color: '#667085' },
 ]
 
 const typeLabel = (t) => ({ dingtalk: '钉钉', wecom: '企业微信', lark: '飞书', custom: '自定义' }[t] || t)
@@ -189,24 +189,24 @@ onMounted(fetchWebhooks)
   font-size: 22px;
   font-weight: 600;
   margin-bottom: 20px;
-  color: #e0e0e0;
+  color: var(--app-text);
 }
 .type-card {
   text-align: center;
   padding: 20px;
   border-radius: 8px;
-  background: #232440;
-  border: 1px solid rgba(255,255,255,0.06);
+  background: var(--app-surface-soft);
+  border: 1px solid var(--app-border-soft);
 }
 .type-name {
   margin-top: 8px;
   font-size: 15px;
   font-weight: 600;
-  color: #e0e0e0;
+  color: var(--app-text);
 }
 .type-desc {
   margin-top: 4px;
   font-size: 12px;
-  color: #a0a3bd;
+  color: var(--app-muted);
 }
 </style>

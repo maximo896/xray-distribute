@@ -195,7 +195,7 @@ onUnmounted(() => clearInterval(timer))
 
 .eyebrow,
 .metric-label {
-  color: #8b949e;
+  color: var(--app-muted);
   font-size: 12px;
 }
 
@@ -211,16 +211,16 @@ onUnmounted(() => clearInterval(timer))
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #6b7280;
+  background: #98a2b3;
 }
 
 .status-dot.running {
-  background: #22c55e;
-  box-shadow: 0 0 0 4px rgba(34, 197, 94, .12);
+  background: var(--app-success);
+  box-shadow: 0 0 0 4px var(--app-success-soft);
 }
 
 .status-dot.error {
-  background: #ef4444;
+  background: var(--app-danger);
 }
 
 .status-actions {
@@ -240,13 +240,13 @@ onUnmounted(() => clearInterval(timer))
 
 .metric-value {
   margin-top: 8px;
-  color: #f8fafc;
+  color: var(--app-text);
   font-size: 30px;
   font-weight: 800;
 }
 
 .metric.danger .metric-value {
-  color: #f87171;
+  color: var(--app-danger);
 }
 
 .grid {
@@ -264,7 +264,7 @@ onUnmounted(() => clearInterval(timer))
 .queue-bar {
   height: 10px;
   overflow: hidden;
-  background: #0f1720;
+  background: #eef2f7;
   border-radius: 999px;
 }
 
@@ -283,26 +283,26 @@ onUnmounted(() => clearInterval(timer))
 
 .flow-grid div {
   padding: 12px;
-  background: #101419;
-  border: 1px solid #2a2f36;
+  background: var(--app-surface-soft);
+  border: 1px solid var(--app-border-soft);
   border-radius: 8px;
 }
 
 .flow-grid span,
 .severity span {
   display: block;
-  color: #8b949e;
+  color: var(--app-muted);
   font-size: 12px;
   margin-bottom: 6px;
 }
 
 .flow-grid strong,
 .severity strong {
-  color: #f8fafc;
+  color: var(--app-text);
 }
 
 .bad {
-  color: #f87171 !important;
+  color: var(--app-danger) !important;
 }
 
 .severity {
@@ -319,14 +319,14 @@ onUnmounted(() => clearInterval(timer))
   gap: 10px;
   align-items: center;
   min-height: 32px;
-  color: #cbd5e1;
+  color: var(--app-text);
 }
 
 .log-row code {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #d1d5db;
+  color: #344054;
 }
 
 @media (max-width: 980px) {

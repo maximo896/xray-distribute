@@ -12,8 +12,8 @@
         router
         class="nav"
         background-color="transparent"
-        text-color="#9ca3af"
-        active-text-color="#f8fafc"
+        text-color="#5f6b7a"
+        active-text-color="#1f6feb"
       >
         <el-menu-item index="/">
           <el-icon><DataAnalysis /></el-icon>
@@ -128,8 +128,23 @@ onMounted(() => {
 body {
   margin: 0;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: #e5e7eb;
-  background: #101214;
+  color: #18202a;
+  background: #f5f7fb;
+  --app-bg: #f5f7fb;
+  --app-surface: #ffffff;
+  --app-surface-soft: #f9fbfe;
+  --app-border: #d9e0ea;
+  --app-border-soft: #e7ecf3;
+  --app-text: #18202a;
+  --app-muted: #667085;
+  --app-primary: #1f6feb;
+  --app-primary-soft: #eaf2ff;
+  --app-danger: #d92d20;
+  --app-danger-soft: #fff1f0;
+  --app-success: #198754;
+  --app-success-soft: #eaf7ef;
+  --app-warning: #b7791f;
+  --app-code-bg: #f1f5f9;
 }
 
 .app-shell {
@@ -137,8 +152,8 @@ body {
 }
 
 .sidebar {
-  background: #171a1f;
-  border-right: 1px solid #2a2f36;
+  background: #ffffff;
+  border-right: 1px solid var(--app-border);
   overflow: hidden;
 }
 
@@ -149,10 +164,10 @@ body {
   align-items: center;
   gap: 10px;
   padding: 0 20px;
-  color: #f8fafc;
+  color: #18202a;
   background: transparent;
   border: 0;
-  border-bottom: 1px solid #2a2f36;
+  border-bottom: 1px solid var(--app-border);
   cursor: pointer;
   font-weight: 700;
 }
@@ -169,7 +184,7 @@ body {
 }
 
 .nav .el-menu-item.is-active {
-  background: #243241 !important;
+  background: var(--app-primary-soft) !important;
 }
 
 .topbar {
@@ -178,8 +193,8 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 0 24px;
-  background: #14171b;
-  border-bottom: 1px solid #2a2f36;
+  background: #ffffff;
+  border-bottom: 1px solid var(--app-border);
 }
 
 .topbar-left,
@@ -190,27 +205,28 @@ body {
 }
 
 .page-kicker {
-  color: #8b949e;
+  color: var(--app-muted);
   font-size: 12px;
   line-height: 18px;
 }
 
 .page-name {
-  color: #f8fafc;
+  color: var(--app-text);
   font-size: 18px;
   font-weight: 700;
 }
 
 .main {
-  background: #101214;
+  background: var(--app-bg);
   padding: 24px;
   overflow: auto;
 }
 
 .panel {
-  background: #171a1f;
-  border: 1px solid #2a2f36;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
   border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .04);
 }
 
 .panel-header {
@@ -219,51 +235,77 @@ body {
   justify-content: space-between;
   gap: 12px;
   padding: 16px 18px;
-  border-bottom: 1px solid #2a2f36;
+  border-bottom: 1px solid var(--app-border-soft);
 }
 
 .panel-title {
-  color: #f8fafc;
+  color: var(--app-text);
   font-size: 15px;
   font-weight: 700;
 }
 
 .muted {
-  color: #8b949e;
+  color: var(--app-muted);
 }
 
 .el-card {
-  --el-card-bg-color: #171a1f;
-  --el-card-border-color: #2a2f36;
-  color: #e5e7eb;
+  --el-card-bg-color: #ffffff;
+  --el-card-border-color: var(--app-border);
+  color: var(--app-text);
   border-radius: 8px;
 }
 
 .el-table {
-  --el-table-bg-color: #171a1f;
-  --el-table-tr-bg-color: #171a1f;
-  --el-table-header-bg-color: #1d2229;
-  --el-table-row-hover-bg-color: #20262d;
-  --el-table-border-color: #2a2f36;
-  --el-table-text-color: #d1d5db;
-  --el-table-header-text-color: #f8fafc;
+  --el-table-bg-color: #ffffff;
+  --el-table-tr-bg-color: #ffffff;
+  --el-table-header-bg-color: #f3f6fa;
+  --el-table-row-hover-bg-color: #f7faff;
+  --el-table-border-color: var(--app-border-soft);
+  --el-table-text-color: var(--app-text);
+  --el-table-header-text-color: #344054;
 }
 
 .el-dialog {
-  --el-dialog-bg-color: #171a1f;
+  --el-dialog-bg-color: #ffffff;
 }
 
 .el-dialog__title,
 .el-form-item__label {
-  color: #e5e7eb;
+  color: var(--app-text);
 }
 
 .el-input__wrapper {
-  background: #101214 !important;
-  box-shadow: 0 0 0 1px #2a2f36 inset !important;
+  background: #ffffff !important;
+  box-shadow: 0 0 0 1px var(--app-border) inset !important;
 }
 
 .el-input__inner {
-  color: #f8fafc !important;
+  color: var(--app-text) !important;
+}
+
+.el-select__wrapper,
+.el-textarea__inner,
+.el-input-number .el-input__wrapper {
+  background: #ffffff !important;
+  box-shadow: 0 0 0 1px var(--app-border) inset !important;
+}
+
+.el-textarea__inner {
+  color: var(--app-text) !important;
+}
+
+.el-menu {
+  --el-menu-hover-bg-color: #f3f6fb;
+}
+
+.el-button {
+  --el-button-bg-color: #ffffff;
+  --el-button-border-color: var(--app-border);
+}
+
+.el-pagination {
+  --el-pagination-bg-color: #ffffff;
+  --el-pagination-button-bg-color: #ffffff;
+  --el-pagination-text-color: var(--app-muted);
 }
 </style>

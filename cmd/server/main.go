@@ -139,6 +139,13 @@ func main() {
 				if err != nil {
 					logger.Warn("record OOB interaction failed", "error", err, "full_id", interaction.FullID)
 				}
+				if match == nil {
+					logger.Info("OOB interaction ignored (no matching request)",
+						"protocol", interaction.Protocol,
+						"full_id", interaction.FullID,
+						"remote", interaction.RemoteAddress)
+					continue
+				}
 				request := interaction.RawRequest
 				description := fmt.Sprintf("Remote address: %s", interaction.RemoteAddress)
 				detail := map[string]interface{}{
@@ -147,16 +154,14 @@ func main() {
 					"oob_request":  interaction.RawRequest,
 					"oob_response": interaction.RawResponse,
 				}
-				if match != nil {
-					request = match.Raw
-					description = fmt.Sprintf("Remote address: %s; matched %s request #%d: %s", interaction.RemoteAddress, match.Source, match.ID, match.URL)
-					detail["matched_source"] = match.Source
-					detail["matched_id"] = match.ID
-					detail["matched_method"] = match.Method
-					detail["matched_url"] = match.URL
-					detail["matched_raw"] = match.Raw
-					detail["matched_created_at"] = match.CreatedAt
-				}
+				request = match.Raw
+				description = fmt.Sprintf("Remote address: %s; matched %s request #%d: %s", interaction.RemoteAddress, match.Source, match.ID, match.URL)
+				detail["matched_source"] = match.Source
+				detail["matched_id"] = match.ID
+				detail["matched_method"] = match.Method
+				detail["matched_url"] = match.URL
+				detail["matched_raw"] = match.Raw
+				detail["matched_created_at"] = match.CreatedAt
 				detailJSON, _ := json.Marshal(detail)
 				vuln := &model.Vulnerability{
 					ID:          fmt.Sprintf("oob-%s-%s-%d", interaction.Protocol, interaction.FullID, interaction.Timestamp.UnixNano()),

@@ -58,7 +58,7 @@
         <el-row :gutter="20">
           <el-col :span="12">
             <div class="cert-download-card">
-              <el-icon :size="40" color="#409eff"><Document /></el-icon>
+              <el-icon :size="40" color="#1f6feb"><Document /></el-icon>
               <h4>PEM格式 (.crt)</h4>
               <p>适用于：Windows、Linux、macOS</p>
               <el-button type="primary" @click="downloadCert('crt')">
@@ -68,7 +68,7 @@
           </el-col>
           <el-col :span="12">
             <div class="cert-download-card">
-              <el-icon :size="40" color="#67c23a"><Iphone /></el-icon>
+              <el-icon :size="40" color="#198754"><Iphone /></el-icon>
               <h4>DER格式 (.cer)</h4>
               <p>适用于：iOS、Android 手机导入</p>
               <el-button type="success" @click="downloadCert('der')">
@@ -80,7 +80,7 @@
 
         <el-divider />
 
-        <h4 style="color: #e0e0e0; margin-bottom: 12px">证书安装指南</h4>
+        <h4 style="color: var(--app-text); margin-bottom: 12px">证书安装指南</h4>
         <el-collapse>
           <el-collapse-item title="iOS (iPhone/iPad)" name="ios">
             <ol class="install-steps">
@@ -191,57 +191,57 @@ onMounted(fetchAgents)
   font-size: 22px;
   font-weight: 600;
   margin-bottom: 20px;
-  color: #e0e0e0;
+  color: var(--app-text);
 }
 .cert-download-card {
   text-align: center;
   padding: 24px;
   border-radius: 8px;
-  background: #232440;
-  border: 1px solid rgba(255,255,255,0.06);
+  background: var(--app-surface-soft);
+  border: 1px solid var(--app-border-soft);
 }
 .cert-download-card h4 {
   margin: 12px 0 4px;
-  color: #e0e0e0;
+  color: var(--app-text);
   font-size: 15px;
 }
 .cert-download-card p {
-  color: #a0a3bd;
+  color: var(--app-muted);
   font-size: 13px;
   margin-bottom: 16px;
 }
 .install-steps {
   padding-left: 20px;
-  color: #c0c4cc;
+  color: #344054;
   line-height: 2;
 }
 .install-steps code {
-  background: #232440;
+  background: var(--app-code-bg);
   padding: 2px 6px;
   border-radius: 4px;
-  color: #409eff;
+  color: var(--app-primary);
   font-size: 13px;
 }
 .guide p {
   margin: 8px 0;
-  color: #c0c4cc;
+  color: #344054;
   line-height: 1.8;
 }
 .guide code {
-  background: #232440;
+  background: var(--app-code-bg);
   padding: 2px 8px;
   border-radius: 4px;
-  color: #409eff;
+  color: var(--app-primary);
   font-size: 13px;
 }
 .code-block {
-  background: #0f1021;
-  border: 1px solid rgba(255,255,255,0.06);
+  background: var(--app-code-bg);
+  border: 1px solid var(--app-border-soft);
   border-radius: 6px;
   padding: 12px;
   font-size: 13px;
   line-height: 1.6;
-  color: #c0c4cc;
+  color: #344054;
   margin: 8px 0;
 }
 </style>

@@ -146,7 +146,7 @@ onUnmounted(() => clearInterval(timer))
   align-items: center;
   gap: 12px;
   margin-top: 6px;
-  color: #f8fafc;
+  color: var(--app-text);
   font-size: 30px;
   font-weight: 800;
 }
@@ -156,7 +156,7 @@ onUnmounted(() => clearInterval(timer))
   flex-wrap: wrap;
   gap: 14px;
   margin-top: 12px;
-  color: #9ca3af;
+  color: var(--app-muted);
 }
 
 .actions,
@@ -170,16 +170,16 @@ onUnmounted(() => clearInterval(timer))
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: #6b7280;
+  background: #98a2b3;
 }
 
 .status-dot.running {
-  background: #22c55e;
-  box-shadow: 0 0 0 5px rgba(34, 197, 94, .13);
+  background: var(--app-success);
+  box-shadow: 0 0 0 5px var(--app-success-soft);
 }
 
 .status-dot.error {
-  background: #ef4444;
+  background: var(--app-danger);
 }
 
 .error {
@@ -187,9 +187,9 @@ onUnmounted(() => clearInterval(timer))
   align-items: center;
   gap: 10px;
   padding: 14px 16px;
-  color: #fecaca;
-  border-color: rgba(239, 68, 68, .45);
-  background: rgba(127, 29, 29, .2);
+  color: var(--app-danger);
+  border-color: #f3b6b0;
+  background: var(--app-danger-soft);
 }
 
 .info-grid {
@@ -205,7 +205,7 @@ onUnmounted(() => clearInterval(timer))
 
 .info-card span {
   display: block;
-  color: #8b949e;
+  color: var(--app-muted);
   font-size: 12px;
   margin-bottom: 10px;
 }
@@ -215,7 +215,7 @@ onUnmounted(() => clearInterval(timer))
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #f8fafc;
+  color: var(--app-text);
 }
 
 .log-table {
@@ -231,26 +231,26 @@ onUnmounted(() => clearInterval(timer))
   gap: 10px;
   align-items: start;
   padding: 8px 18px;
-  border-bottom: 1px solid rgba(42, 47, 54, .65);
+  border-bottom: 1px solid var(--app-border-soft);
 }
 
 .log-line:hover {
-  background: #1d2229;
+  background: #f7faff;
 }
 
 .log-line .time {
-  color: #8b949e;
+  color: var(--app-muted);
   font-variant-numeric: tabular-nums;
 }
 
 .log-line code {
-  color: #d1d5db;
+  color: #344054;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 .log-line.error code {
-  color: #fecaca;
+  color: var(--app-danger);
 }
 
 @media (max-width: 1100px) {

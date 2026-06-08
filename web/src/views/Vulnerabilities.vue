@@ -87,12 +87,12 @@
         </el-descriptions>
 
         <div v-if="currentVuln.request" style="margin-top: 16px">
-          <h4 style="color: #a0a3bd; margin-bottom: 8px">请求包</h4>
+          <h4 style="color: var(--app-muted); margin-bottom: 8px">请求包</h4>
           <pre class="code-block">{{ currentVuln.request }}</pre>
         </div>
 
         <div v-if="currentVuln.response" style="margin-top: 16px">
-          <h4 style="color: #a0a3bd; margin-bottom: 8px">响应包</h4>
+          <h4 style="color: var(--app-muted); margin-bottom: 8px">响应包</h4>
           <pre class="code-block">{{ currentVuln.response }}</pre>
         </div>
       </template>
@@ -155,10 +155,10 @@ onMounted(fetchVulns)
   font-size: 22px;
   font-weight: 600;
   margin-bottom: 20px;
-  color: #e0e0e0;
+  color: var(--app-text);
 }
 .url-link {
-  color: #409eff;
+  color: var(--app-primary);
   text-decoration: none;
 }
 .url-link:hover {
@@ -170,14 +170,14 @@ onMounted(fetchVulns)
   justify-content: flex-end;
 }
 .code-block {
-  background: #0f1021;
-  border: 1px solid rgba(255,255,255,0.06);
+  background: var(--app-code-bg);
+  border: 1px solid var(--app-border-soft);
   border-radius: 6px;
   padding: 12px;
   font-size: 12px;
   line-height: 1.6;
   overflow-x: auto;
-  color: #c0c4cc;
+  color: #344054;
   max-height: 300px;
   overflow-y: auto;
 }

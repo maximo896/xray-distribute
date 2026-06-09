@@ -124,6 +124,11 @@ func PerformUpdate(release *GitHubRelease, component Component, logger *slog.Log
 	logger.Info("提取二进制完成", "name", binaryName, "size", len(binaryData))
 
 	// 使用 minio/selfupdate 应用更新
+	restartPath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("get current executable path failed: %w", err)
+	}
+
 	if err := selfupdate.Apply(bytes.NewReader(binaryData), selfupdate.Options{}); err != nil {
 		// 回滚更新
 		if rerr := selfupdate.RollbackError(err); rerr != nil {
@@ -135,7 +140,7 @@ func PerformUpdate(release *GitHubRelease, component Component, logger *slog.Log
 	logger.Info("更新应用成功，准备重启", "new_version", release.TagName)
 
 	// 重启进程
-	RestartFunc()
+	RestartFunc(restartPath)
 
 	return nil
 }
@@ -212,13 +217,15 @@ func stripPath(name string) string {
 }
 
 // defaultRestart 默认的重启实现：启动新进程后退出当前进程
-func defaultRestart() {
-	execPath, err := os.Executable()
-	if err != nil {
-		slog.Error("获取可执行文件路径失败", "error", err)
-		os.Exit(1)
+func defaultRestart(execPath string) {
+	if execPath == "" {
+		var err error
+		execPath, err = os.Executable()
+		if err != nil {
+			slog.Error("get executable path failed", "error", err)
+			os.Exit(1)
+		}
 	}
-
 	args := os.Args[1:]
 	cmd := exec.Command(execPath, args...)
 	cmd.Stdout = os.Stdout

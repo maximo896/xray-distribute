@@ -21,6 +21,8 @@ import (
 	"github.com/xray-distribute/internal/model"
 )
 
+const sqldetFailRetries = 7
+
 /*
 Manager 管理xray反连平台，支持两种模式：
 
@@ -512,6 +514,7 @@ func (m *Manager) GenerateXRayConfig(baseConfigPath string) (string, error) {
 
 	// 构建 reverse 配置（xray 4.0 格式）
 	delete(config, "version")
+	enforceSqldetRetryConfig(config)
 	reverseMap := m.buildReverseConfigV4()
 	config["reverse"] = reverseMap
 	if m.config.RecordingProxy != "" {
@@ -544,6 +547,29 @@ func (m *Manager) GenerateXRayConfig(baseConfigPath string) (string, error) {
 		"mode", m.config.Mode,
 		"payload_url", m.interactshURL)
 	return configPath, nil
+}
+
+func enforceSqldetRetryConfig(config map[string]interface{}) {
+	httpCfg, ok := config["http"].(map[string]interface{})
+	if !ok {
+		httpCfg = make(map[string]interface{})
+		config["http"] = httpCfg
+	}
+	httpCfg["fail_retries"] = sqldetFailRetries
+
+	plugins, ok := config["plugins"].(map[string]interface{})
+	if !ok {
+		plugins = make(map[string]interface{})
+		config["plugins"] = plugins
+	}
+	sqldet, ok := plugins["sqldet"].(map[string]interface{})
+	if !ok {
+		sqldet = make(map[string]interface{})
+		plugins["sqldet"] = sqldet
+	}
+	if _, ok := sqldet["enabled"]; !ok {
+		sqldet["enabled"] = true
+	}
 }
 
 // generateDefaultConfig 通过运行 xray webscan 触发生成默认的 config.yaml

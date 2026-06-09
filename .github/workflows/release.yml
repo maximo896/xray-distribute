@@ -53,7 +53,7 @@ jobs:
       - name: Prepare server package
         run: |
           mkdir -p xray-distribute-server/data/certs
-          cp data/xray.yaml data/plugin.xray.yaml data/module.xray.yaml xray-distribute-server/data/ || true
+          cp data/xray.yaml data/plugin.xray.yaml data/module.xray.yaml data/config.yaml xray-distribute-server/data/ || true
           cp data/certs/ca.crt data/certs/ca.key xray-distribute-server/data/certs/ 2>/dev/null || true
 
           cat > xray-distribute-server/config.yaml << 'CFG'

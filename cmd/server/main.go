@@ -141,7 +141,7 @@ func main() {
 					logger.Warn("record OOB interaction failed", "error", err, "full_id", interaction.FullID)
 				}
 				if match == nil {
-					logger.Info("OOB interaction ignored (no matching request)",
+					logger.Debug("OOB interaction ignored (no matching request)",
 						"protocol", interaction.Protocol,
 						"full_id", interaction.FullID,
 						"remote", interaction.RemoteAddress)
@@ -149,11 +149,11 @@ func main() {
 				}
 				description := fmt.Sprintf("Remote address: %s", interaction.RemoteAddress)
 				detail := map[string]interface{}{
-					"oob_protocol":    interaction.Protocol,
-					"oob_full_id":     interaction.FullID,
-					"oob_request":     interaction.RawRequest,
-					"oob_response":    interaction.RawResponse,
-					"remote_address":  interaction.RemoteAddress,
+					"oob_protocol":   interaction.Protocol,
+					"oob_full_id":    interaction.FullID,
+					"oob_request":    interaction.RawRequest,
+					"oob_response":   interaction.RawResponse,
+					"remote_address": interaction.RemoteAddress,
 				}
 				vulnURL := interaction.FullID
 				request := interaction.RawRequest

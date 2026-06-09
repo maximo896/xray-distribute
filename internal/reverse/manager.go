@@ -237,7 +237,7 @@ func (m *Manager) startInteractshMode() error {
 			m.logger.Warn("OOB interaction channel full, dropping notification", "full_id", record.FullID)
 		}
 
-		m.logger.Info("OOB interaction received",
+		m.logger.Debug("OOB interaction received",
 			"protocol", record.Protocol,
 			"full_id", record.FullID,
 			"remote", record.RemoteAddress)

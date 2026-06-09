@@ -48,6 +48,60 @@ func TestRecordOOBPrefersExactHTTPInteractionPath(t *testing.T) {
 	}
 }
 
+func TestRecordOOBDoesNotMatchCommonShortSubdomainLabels(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "traffic.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if _, err := db.RecordXRayRequest("CONNECT", "www.google.com:443", map[string][]string{"User-Agent": {"Go-http-client/1.1"}}, nil, 0, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, interaction := range []model.OOBInteraction{
+		{
+			Protocol:      "dns",
+			FullID:        "WWw.ukuKk.Uk.",
+			RawRequest:    ";; QUESTION SECTION:\n;WWw.ukuKk.Uk.\tIN\tAAAA\n",
+			RemoteAddress: "172.253.4.21",
+			Timestamp:     time.Now(),
+		},
+		{
+			Protocol:      "https",
+			FullID:        "www.ukukk.uk",
+			RawRequest:    "GET /favicon.ico HTTP/2.0\r\nHost: www.ukukk.uk\r\n\r\n",
+			RemoteAddress: "45.142.154.61",
+			Timestamp:     time.Now(),
+		},
+	} {
+		match, err := db.RecordOOB(interaction)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if match != nil {
+			t.Fatalf("expected %s to be ignored, matched %s %s", interaction.FullID, match.Method, match.URL)
+		}
+	}
+}
+
+func TestCandidateIDsOnlyIncludesLikelyCorrelationPrefix(t *testing.T) {
+	cases := map[string][]string{
+		"www.ukukk.uk":            {"www.ukukk.uk"},
+		"ns1.ukukk.uk.":           {"ns1.ukukk.uk"},
+		"abc12345.ukukk.uk":       {"abc12345.ukukk.uk", "abc12345"},
+		"abc123.oast.fun":         {"abc123.oast.fun"},
+		"a-b-c-d-1.example.test":  {"a-b-c-d-1.example.test", "a-b-c-d-1"},
+		"bad_label!.example.test": {"bad_label!.example.test"},
+	}
+	for input, want := range cases {
+		got := candidateIDs(input)
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Fatalf("candidateIDs(%q) = %#v, want %#v", input, got, want)
+		}
+	}
+}
+
 func TestConcurrentRecordXRayRequestsDoesNotBusy(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "traffic.db"))
 	if err != nil {

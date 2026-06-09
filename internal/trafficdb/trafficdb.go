@@ -384,15 +384,36 @@ func isBusyError(err error) bool {
 }
 
 func candidateIDs(fullID string) []string {
-	fullID = strings.TrimSpace(fullID)
+	fullID = strings.Trim(strings.TrimSpace(fullID), ".")
 	if fullID == "" {
 		return nil
 	}
 	parts := []string{fullID}
 	if i := strings.IndexByte(fullID, '.'); i > 0 {
-		parts = append(parts, fullID[:i])
+		label := fullID[:i]
+		if isLikelyCorrelationID(label) {
+			parts = append(parts, label)
+		}
 	}
 	return parts
+}
+
+func isLikelyCorrelationID(label string) bool {
+	label = strings.ToLower(strings.TrimSpace(label))
+	if len(label) < 8 {
+		return false
+	}
+	switch label {
+	case "www", "wwww", "ns1", "ns2", "api", "mail", "smtp", "imap", "pop", "ftp", "cdn", "static", "assets":
+		return false
+	}
+	for _, r := range label {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func interactionNeedles(interaction model.OOBInteraction) []string {

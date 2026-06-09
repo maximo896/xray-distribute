@@ -268,8 +268,7 @@ func (m *Manager) SendToXRay(req *model.MirrorRequest) error {
 }
 
 func (m *Manager) HandleWebhook(data json.RawMessage) {
-	v := m.parseVulnFromRaw(data)
-	if v != nil {
+	for _, v := range m.parseVulnsFromRaw(data) {
 		select {
 		case m.vulnChan <- v:
 			m.addLog("warn", fmt.Sprintf("vulnerability: [%s] %s %s", v.Severity, v.Title, v.URL))
@@ -290,13 +289,15 @@ func (m *Manager) parseStdout(reader io.Reader) {
 		line := scanner.Text()
 		var raw json.RawMessage
 		if err := json.Unmarshal([]byte(line), &raw); err == nil {
-			v := m.parseVulnFromRaw(raw)
-			if v != nil {
-				select {
-				case m.vulnChan <- v:
-					m.addLog("warn", fmt.Sprintf("vulnerability: [%s] %s %s", v.Severity, v.Title, v.URL))
-				default:
-					m.addLog("error", "vuln channel full, dropping")
+			vulns := m.parseVulnsFromRaw(raw)
+			if len(vulns) > 0 {
+				for _, v := range vulns {
+					select {
+					case m.vulnChan <- v:
+						m.addLog("warn", fmt.Sprintf("vulnerability: [%s] %s %s", v.Severity, v.Title, v.URL))
+					default:
+						m.addLog("error", "vuln channel full, dropping")
+					}
 				}
 				continue
 			}
@@ -306,13 +307,22 @@ func (m *Manager) parseStdout(reader io.Reader) {
 	}
 }
 
-func (m *Manager) parseStderr(reader io.Reader) {
-	scanner := bufio.NewScanner(reader)
-	for scanner.Scan() {
-		line := scanner.Text()
-		m.addLog("error", line)
-		m.logger.Warn("xray stderr", "msg", line)
+func (m *Manager) parseVulnsFromRaw(raw json.RawMessage) []*model.Vulnerability {
+	var items []json.RawMessage
+	if err := json.Unmarshal(raw, &items); err == nil {
+		vulns := make([]*model.Vulnerability, 0, len(items))
+		for _, item := range items {
+			if v := m.parseVulnFromRaw(item); v != nil {
+				vulns = append(vulns, v)
+			}
+		}
+		return vulns
 	}
+
+	if v := m.parseVulnFromRaw(raw); v != nil {
+		return []*model.Vulnerability{v}
+	}
+	return nil
 }
 
 func (m *Manager) parseVulnFromRaw(raw json.RawMessage) *model.Vulnerability {
@@ -321,51 +331,171 @@ func (m *Manager) parseVulnFromRaw(raw json.RawMessage) *model.Vulnerability {
 		return nil
 	}
 
-	vulnType, _ := data["type"].(string)
-	if vulnType != "vuln" && vulnType != "vuln_webhook" && vulnType != "vuln/vuln_webhook" {
+	vulnData := data
+	if nested, ok := data["data"].(map[string]interface{}); ok {
+		vulnData = nested
+	}
+
+	vulnType := cleanXRayString(data["type"])
+	if vulnType != "" && !isKnownXRayVulnType(vulnType) && !looksLikeXRayVuln(vulnData) {
+		return nil
+	}
+	if vulnType == "" && !looksLikeXRayVuln(vulnData) {
 		return nil
 	}
 
-	vulnData, ok := data["data"].(map[string]interface{})
-	if !ok {
-		vulnData = data
+	detail, _ := vulnData["detail"].(map[string]interface{})
+	target, _ := vulnData["target"].(map[string]interface{})
+
+	plugin := cleanXRayString(vulnData["plugin"])
+	urlValue := firstNonEmptyXRayString(
+		vulnData["url"],
+		target["url"],
+		detail["addr"],
+	)
+	title := firstNonEmptyXRayString(
+		vulnData["title"],
+		detail["title"],
+		plugin,
+	)
+	vulnClass := firstNonEmptyXRayString(
+		vulnData["vuln_class"],
+		detail["vuln_class"],
+		plugin,
+	)
+	severity := firstNonEmptyXRayString(
+		detail["severity"],
+		vulnData["severity"],
+		"info",
+	)
+
+	createdAt := time.Now()
+	if t, ok := xrayTime(vulnData["create_time"]); ok {
+		createdAt = t
 	}
 
 	v := &model.Vulnerability{
-		ID:        fmt.Sprintf("%v", vulnData["hash_id"]),
-		Plugin:    fmt.Sprintf("%v", vulnData["plugin"]),
-		URL:       fmt.Sprintf("%v", vulnData["url"]),
-		VulnClass: fmt.Sprintf("%v", vulnData["vuln_class"]),
-		Title:     fmt.Sprintf("%v", vulnData["title"]),
-		CreatedAt: time.Now(),
-		Notified:  false,
+		ID:          firstNonEmptyXRayString(vulnData["hash_id"], fmt.Sprintf("%s|%s|%d", plugin, urlValue, createdAt.UnixNano())),
+		Plugin:      plugin,
+		URL:         urlValue,
+		VulnClass:   vulnClass,
+		Title:       title,
+		Severity:    severity,
+		Description: firstNonEmptyXRayString(detail["description"], vulnData["description"]),
+		Solution:    firstNonEmptyXRayString(detail["solution"], vulnData["solution"]),
+		CreatedAt:   createdAt,
+		Notified:    false,
 	}
 
-	if detail, ok := vulnData["detail"].(map[string]interface{}); ok {
-		v.Severity = fmt.Sprintf("%v", detail["severity"])
-		v.Description = fmt.Sprintf("%v", detail["description"])
-		v.Solution = fmt.Sprintf("%v", detail["solution"])
-		if req, ok := detail["request"].(string); ok {
-			v.Request = req
+	v.Request = firstNonEmptyXRayString(detail["request"], vulnData["request"])
+	v.Response = firstNonEmptyXRayString(detail["response"], vulnData["response"])
+	if v.Request == "" && v.Response == "" {
+		v.Request, v.Response = xraySnapshot(detail["snapshot"])
+	}
+	if len(detail) > 0 {
+		if b, err := json.Marshal(detail); err == nil {
+			v.Detail = string(b)
 		}
-		if resp, ok := detail["response"].(string); ok {
-			v.Response = resp
-		}
-	}
-	if v.Severity == "" || v.Severity == "<nil>" {
-		v.Severity = fmt.Sprintf("%v", vulnData["severity"])
-	}
-	if req, ok := vulnData["request"].(string); ok {
-		v.Request = req
-	}
-	if resp, ok := vulnData["response"].(string); ok {
-		v.Response = resp
 	}
 
-	if v.Title == "" || v.Title == "<nil>" {
+	if v.Title == "" || v.URL == "" {
 		return nil
 	}
 	return v
+}
+
+func isKnownXRayVulnType(vulnType string) bool {
+	switch vulnType {
+	case "vuln", "vuln_webhook", "vuln/vuln_webhook":
+		return true
+	default:
+		return false
+	}
+}
+
+func looksLikeXRayVuln(data map[string]interface{}) bool {
+	if data == nil {
+		return false
+	}
+	if cleanXRayString(data["title"]) != "" || cleanXRayString(data["plugin"]) != "" {
+		return true
+	}
+	if _, ok := data["detail"].(map[string]interface{}); ok {
+		if _, ok := data["target"].(map[string]interface{}); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func cleanXRayString(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+	s, ok := v.(string)
+	if !ok {
+		s = fmt.Sprintf("%v", v)
+	}
+	s = strings.TrimSpace(s)
+	if s == "" || s == "<nil>" {
+		return ""
+	}
+	return s
+}
+
+func firstNonEmptyXRayString(values ...interface{}) string {
+	for _, v := range values {
+		if s := cleanXRayString(v); s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+func xrayTime(v interface{}) (time.Time, bool) {
+	switch t := v.(type) {
+	case float64:
+		if t <= 0 {
+			return time.Time{}, false
+		}
+		if t > 1e12 {
+			return time.UnixMilli(int64(t)), true
+		}
+		return time.Unix(int64(t), 0), true
+	case string:
+		if parsed, err := time.Parse(time.RFC3339Nano, t); err == nil {
+			return parsed, true
+		}
+	}
+	return time.Time{}, false
+}
+
+func xraySnapshot(snapshot interface{}) (string, string) {
+	rows, ok := snapshot.([]interface{})
+	if !ok || len(rows) == 0 {
+		return "", ""
+	}
+	first, ok := rows[0].([]interface{})
+	if !ok {
+		return "", ""
+	}
+	var req, resp string
+	if len(first) > 0 {
+		req = cleanXRayString(first[0])
+	}
+	if len(first) > 1 {
+		resp = cleanXRayString(first[1])
+	}
+	return req, resp
+}
+
+func (m *Manager) parseStderr(reader io.Reader) {
+	scanner := bufio.NewScanner(reader)
+	for scanner.Scan() {
+		line := scanner.Text()
+		m.addLog("error", line)
+		m.logger.Warn("xray stderr", "msg", line)
+	}
 }
 
 func (m *Manager) waitProcess() {

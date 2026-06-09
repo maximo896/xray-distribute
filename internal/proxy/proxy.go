@@ -222,6 +222,7 @@ func (p *MirrorProxy) handleHTTPRequest(req *http.Request, conn net.Conn) {
 			forwardReq.Header.Add(key, value)
 		}
 	}
+	cleanForwardHeaders(forwardReq.Header)
 	forwardReq.Host = req.Host
 
 	resp, err := p.forwardClient.Do(forwardReq)
@@ -279,6 +280,7 @@ func (p *MirrorProxy) handleH1MITM(clientConn net.Conn, hostPort string) {
 				forwardReq.Header.Add(key, value)
 			}
 		}
+		cleanForwardHeaders(forwardReq.Header)
 		forwardReq.Host = req.Host
 
 		resp, err := p.forwardClient.Do(forwardReq)
@@ -338,6 +340,7 @@ func (p *MirrorProxy) handleH2MITM(clientConn net.Conn, hostPort string) {
 				forwardReq.Header.Add(key, value)
 			}
 		}
+		cleanForwardHeaders(forwardReq.Header)
 		forwardReq.Host = r.Host
 
 		resp, err := p.forwardClient.Do(forwardReq)
@@ -363,6 +366,29 @@ func (p *MirrorProxy) handleH2MITM(clientConn net.Conn, hostPort string) {
 	p.h2Server.ServeConn(clientConn, &http2.ServeConnOpts{
 		Handler: handler,
 	})
+}
+
+func cleanForwardHeaders(header http.Header) {
+	for _, value := range header.Values("Connection") {
+		for _, field := range strings.Split(value, ",") {
+			if key := strings.TrimSpace(field); key != "" {
+				header.Del(key)
+			}
+		}
+	}
+	for _, key := range []string{
+		"Connection",
+		"Proxy-Connection",
+		"Keep-Alive",
+		"Proxy-Authenticate",
+		"Proxy-Authorization",
+		"Te",
+		"Trailer",
+		"Transfer-Encoding",
+		"Upgrade",
+	} {
+		header.Del(key)
+	}
 }
 
 // relayBidirectional 双向中继

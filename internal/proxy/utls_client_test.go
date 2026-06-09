@@ -82,7 +82,11 @@ func TestChromeForwardTransportDoesNotFallbackForNonReplayableRequests(t *testin
 			return nil, nil
 		}),
 		h1: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			t.Fatal("HTTP/1 fallback should not run for non-ALPN errors")
+			t.Fatal("HTTP/1 fallback should not run for non-replayable requests")
+			return nil, nil
+		}),
+		standard: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			t.Fatal("standard fallback should not run for non-replayable requests")
 			return nil, nil
 		}),
 	}
@@ -134,5 +138,43 @@ func TestChromeForwardTransportTriesCompatH2BeforeHTTP1(t *testing.T) {
 	}
 	if h1Called {
 		t.Fatal("did not expect HTTP/1 fallback after compat HTTP/2 succeeds")
+	}
+}
+
+func TestChromeForwardTransportUsesStandardFallback(t *testing.T) {
+	var standardCalled bool
+	transport := &chromeForwardTransport{
+		h2: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return nil, errors.New("h2 failed")
+		}),
+		h2Compat: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return nil, errors.New("h2 compat failed")
+		}),
+		h1: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return nil, errors.New("h1 failed")
+		}),
+		standard: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			standardCalled = true
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader("ok")),
+				Request:    req,
+			}, nil
+		}),
+	}
+
+	req, err := http.NewRequest(http.MethodGet, "https://example.com/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("round trip: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if !standardCalled {
+		t.Fatal("expected standard fallback to be called")
 	}
 }

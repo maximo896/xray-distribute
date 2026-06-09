@@ -21,12 +21,15 @@ func newUTLSForwardClient() (*http.Client, error) {
 	}
 
 	h1Transport := &http.Transport{
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 10,
-		IdleConnTimeout:     90 * time.Second,
-		DialTLSContext:      dialTLSWithUTLSH1,
-		ForceAttemptHTTP2:   false,
-		TLSNextProto:        map[string]func(string, *tls.Conn) http.RoundTripper{},
+		MaxIdleConns:          500,
+		MaxIdleConnsPerHost:   50,
+		MaxConnsPerHost:       100,
+		IdleConnTimeout:       120 * time.Second,
+		ResponseHeaderTimeout: 45 * time.Second,
+		ExpectContinueTimeout: 2 * time.Second,
+		DialTLSContext:        dialTLSWithUTLSH1,
+		ForceAttemptHTTP2:     false,
+		TLSNextProto:          map[string]func(string, *tls.Conn) http.RoundTripper{},
 	}
 	h2Transport := &http2.Transport{
 		DialTLSContext: dialTLSWithUTLSH2Auto,
@@ -34,10 +37,20 @@ func newUTLSForwardClient() (*http.Client, error) {
 	h2CompatTransport := &http2.Transport{
 		DialTLSContext: dialTLSWithUTLSH2Chrome120,
 	}
+	standardTransport := &http.Transport{
+		MaxIdleConns:          500,
+		MaxIdleConnsPerHost:   50,
+		MaxConnsPerHost:       100,
+		IdleConnTimeout:       120 * time.Second,
+		ResponseHeaderTimeout: 45 * time.Second,
+		ExpectContinueTimeout: 2 * time.Second,
+		ForceAttemptHTTP2:     true,
+		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
+	}
 
 	return &http.Client{
-		Timeout:   30 * time.Second,
-		Transport: &chromeForwardTransport{h2: h2Transport, h2Compat: h2CompatTransport, h1: h1Transport},
+		Timeout:   90 * time.Second,
+		Transport: &chromeForwardTransport{h2: h2Transport, h2Compat: h2CompatTransport, h1: h1Transport, standard: standardTransport},
 		Jar:       jar,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
@@ -49,40 +62,43 @@ type chromeForwardTransport struct {
 	h2       http.RoundTripper
 	h2Compat http.RoundTripper
 	h1       http.RoundTripper
+	standard http.RoundTripper
 }
 
 func (t *chromeForwardTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	applyChromeHeaders(req)
 
 	if req.URL.Scheme != "https" {
-		return t.h1.RoundTrip(req)
+		return roundTripWithFallback(req, t.h1, t.standard)
 	}
 
-	resp, err := t.h2.RoundTrip(req)
-	if err == nil {
-		return resp, nil
-	}
+	return roundTripWithFallback(req, t.h2, t.h2Compat, t.h1, t.standard)
+}
 
-	if canRetry(req) && t.h2Compat != nil {
-		retryReq, retryErr := cloneRequestForRetry(req)
-		if retryErr != nil {
-			return nil, err
+func roundTripWithFallback(req *http.Request, transports ...http.RoundTripper) (*http.Response, error) {
+	var lastErr error
+	for i, transport := range transports {
+		if transport == nil {
+			continue
 		}
-		resp, compatErr := t.h2Compat.RoundTrip(retryReq)
-		if compatErr == nil {
+		attemptReq := req
+		if i > 0 {
+			if !canRetry(req) {
+				break
+			}
+			clone, err := cloneRequestForRetry(req)
+			if err != nil {
+				return nil, lastErr
+			}
+			attemptReq = clone
+		}
+		resp, err := transport.RoundTrip(attemptReq)
+		if err == nil {
 			return resp, nil
 		}
-		err = compatErr
+		lastErr = err
 	}
-
-	if canRetry(req) {
-		retryReq, retryErr := cloneRequestForRetry(req)
-		if retryErr != nil {
-			return nil, err
-		}
-		return t.h1.RoundTrip(retryReq)
-	}
-	return nil, err
+	return nil, lastErr
 }
 
 func applyChromeHeaders(req *http.Request) {
@@ -180,7 +196,8 @@ func dialTLSWithUTLS(ctx context.Context, network, addr string, alpn []string, h
 	}
 
 	dialer := &net.Dialer{
-		Timeout: 10 * time.Second,
+		Timeout:   20 * time.Second,
+		KeepAlive: 30 * time.Second,
 	}
 	tcpConn, err := dialer.DialContext(ctx, network, addr)
 	if err != nil {

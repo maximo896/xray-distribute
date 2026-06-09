@@ -233,6 +233,29 @@ func TestRawHTTPProxy(t *testing.T) {
 	}
 }
 
+func TestCleanForwardHeadersRemovesHopByHopHeaders(t *testing.T) {
+	header := http.Header{}
+	header.Set("Connection", "Upgrade, X-Debug-Hop")
+	header.Set("Proxy-Connection", "keep-alive")
+	header.Set("Keep-Alive", "timeout=5")
+	header.Set("Proxy-Authorization", "secret")
+	header.Set("Te", "trailers")
+	header.Set("Upgrade", "websocket")
+	header.Set("X-Debug-Hop", "remove-me")
+	header.Set("X-Normal", "keep-me")
+
+	cleanForwardHeaders(header)
+
+	for _, key := range []string{"Connection", "Proxy-Connection", "Keep-Alive", "Proxy-Authorization", "Te", "Upgrade", "X-Debug-Hop"} {
+		if header.Get(key) != "" {
+			t.Fatalf("expected %s to be removed, got %q", key, header.Get(key))
+		}
+	}
+	if header.Get("X-Normal") != "keep-me" {
+		t.Fatalf("expected ordinary headers to be preserved")
+	}
+}
+
 func mustParseURL(raw string) *url.URL {
 	u, err := url.Parse(raw)
 	if err != nil {

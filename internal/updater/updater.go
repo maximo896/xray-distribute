@@ -25,6 +25,10 @@ var Version = "dev"
 const (
 	RepoOwner = "maximo896"
 	RepoName  = "xray-distribute"
+
+	disableUpdateEnv   = "XRAY_DISTRIBUTE_DISABLE_UPDATE"
+	allowDevUpdateEnv  = "XRAY_DISTRIBUTE_ALLOW_DEV_UPDATE"
+	developmentVersion = "dev"
 )
 
 // RestartFunc 重启函数，可被覆盖以便测试
@@ -51,6 +55,13 @@ const (
 // CheckForUpdate 检查 GitHub 上是否有新版本
 // 返回最新发布信息和是否有更新
 func CheckForUpdate() (*GitHubRelease, bool, error) {
+	if updateDisabled() {
+		return nil, false, nil
+	}
+	if isDevelopmentVersion() && os.Getenv(allowDevUpdateEnv) == "" {
+		return nil, false, nil
+	}
+
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", RepoOwner, RepoName)
 
 	client := &http.Client{Timeout: 15 * time.Second}
@@ -84,6 +95,15 @@ func CheckForUpdate() (*GitHubRelease, bool, error) {
 
 	hasUpdate := latestVer.GreaterThan(currentVer)
 	return &release, hasUpdate, nil
+}
+
+func updateDisabled() bool {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv(disableUpdateEnv)))
+	return value == "1" || value == "true" || value == "yes" || value == "on"
+}
+
+func isDevelopmentVersion() bool {
+	return strings.EqualFold(strings.TrimSpace(Version), developmentVersion)
 }
 
 // PerformUpdate 执行自更新
@@ -248,6 +268,7 @@ type UpdateChecker struct {
 	interval  time.Duration
 	stopCh    chan struct{}
 	doneCh    chan struct{}
+	started   bool
 }
 
 // NewUpdateChecker 创建更新检查器
@@ -262,12 +283,28 @@ func NewUpdateChecker(component Component, logger *slog.Logger) *UpdateChecker {
 }
 
 // Start 启动后台更新检查协程
-func (uc *UpdateChecker) Start() {
+func (uc *UpdateChecker) Start() bool {
+	if updateDisabled() {
+		uc.logger.Info("auto update checker disabled", "env", disableUpdateEnv)
+		close(uc.doneCh)
+		return false
+	}
+	if isDevelopmentVersion() && os.Getenv(allowDevUpdateEnv) == "" {
+		uc.logger.Info("auto update checker disabled for development build", "version", Version)
+		close(uc.doneCh)
+		return false
+	}
+	uc.started = true
 	go uc.run()
+	return true
 }
 
 // Stop 停止更新检查器
 func (uc *UpdateChecker) Stop() {
+	if !uc.started {
+		<-uc.doneCh
+		return
+	}
 	close(uc.stopCh)
 	<-uc.doneCh
 }

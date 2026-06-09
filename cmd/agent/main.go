@@ -109,7 +109,9 @@ func main() {
 
 	// 启动自动更新检查
 	updateChecker := updater.NewUpdateChecker(updater.ComponentAgent, logger)
-	updateChecker.Start()
+	if updateChecker.Start() {
+		logger.Info("auto update checker started", "current_version", updater.Version)
+	}
 
 	// 等待退出信号
 	quit := make(chan os.Signal, 1)

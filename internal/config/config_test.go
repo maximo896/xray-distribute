@@ -38,3 +38,16 @@ func TestLocalListenIPBindsWildcardToLoopback(t *testing.T) {
 		}
 	}
 }
+
+func TestDisplayListenAddress(t *testing.T) {
+	cases := map[string]string{
+		":8090":          "203.0.113.10:8090",
+		"0.0.0.0:8090":   "203.0.113.10:8090",
+		"127.0.0.1:8090": "127.0.0.1:8090",
+	}
+	for input, want := range cases {
+		if got := DisplayListenAddress(input, "203.0.113.10"); got != want {
+			t.Fatalf("DisplayListenAddress(%q) = %q, want %q", input, got, want)
+		}
+	}
+}

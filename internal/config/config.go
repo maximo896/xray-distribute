@@ -262,3 +262,25 @@ func LocalListenIP(ip string) string {
 	}
 	return ip
 }
+
+func DisplayListenAddress(listenAddr, fallbackHost string) string {
+	listenAddr = strings.TrimSpace(listenAddr)
+	fallbackHost = strings.TrimSpace(fallbackHost)
+	if fallbackHost == "" {
+		fallbackHost = "localhost"
+	}
+	if listenAddr == "" {
+		return fallbackHost
+	}
+	if strings.HasPrefix(listenAddr, ":") {
+		return fallbackHost + listenAddr
+	}
+	host, port, err := net.SplitHostPort(listenAddr)
+	if err != nil {
+		return listenAddr
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" || host == "[::]" {
+		return net.JoinHostPort(fallbackHost, port)
+	}
+	return listenAddr
+}

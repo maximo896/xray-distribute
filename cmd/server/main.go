@@ -224,8 +224,9 @@ func main() {
 
 	// 启动自动更新检查
 	updateChecker := updater.NewUpdateChecker(updater.ComponentServer, logger)
-	updateChecker.Start()
-	logger.Info("auto update checker started", "current_version", updater.Version)
+	if updateChecker.Start() {
+		logger.Info("auto update checker started", "current_version", updater.Version)
+	}
 
 	// 输出Agent连接URI
 	agentURI := config.GenerateAgentURI(cfg)
@@ -240,8 +241,8 @@ func main() {
 	fmt.Println("========================================")
 	fmt.Printf("  XRay-Distribute Server v%s\n", updater.Version)
 	fmt.Println("========================================")
-	fmt.Printf("  Web Panel:  http://%s%s\n", displayHost, cfg.Server.HTTP)
-	fmt.Printf("  API:        http://%s%s\n", displayHost, cfg.Server.API)
+	fmt.Printf("  Web Panel:  http://%s\n", config.DisplayListenAddress(cfg.Server.HTTP, displayHost))
+	fmt.Printf("  API:        http://%s\n", config.DisplayListenAddress(cfg.Server.API, displayHost))
 	fmt.Println()
 	fmt.Println("  Agent连接命令（复制给Agent端执行）:")
 	fmt.Printf("  agent %s\n", agentURI)

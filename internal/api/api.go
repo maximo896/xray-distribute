@@ -13,6 +13,7 @@ import (
 	"github.com/xray-distribute/internal/model"
 	"github.com/xray-distribute/internal/reverse"
 	"github.com/xray-distribute/internal/store"
+	"github.com/xray-distribute/internal/updater"
 	"github.com/xray-distribute/internal/webhook"
 	"github.com/xray-distribute/internal/xray"
 )
@@ -87,6 +88,9 @@ func (s *Server) Handler() http.Handler {
 
 	// 健康检查
 	mux.HandleFunc("/api/v1/ping", s.handlePing)
+
+	// 版本信息（无需认证，agent需要查询）
+	mux.HandleFunc("/api/v1/version", s.handleVersion)
 
 	return mux
 }
@@ -427,6 +431,13 @@ func (s *Server) handleReverseInteractions(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	s.jsonResponse(w, http.StatusOK, "ok", s.reverse.GetInteractions())
+}
+
+// handleVersion 返回版本信息
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	s.jsonResponse(w, http.StatusOK, "ok", map[string]interface{}{
+		"version": updater.Version,
+	})
 }
 
 // jsonResponse 统一JSON响应

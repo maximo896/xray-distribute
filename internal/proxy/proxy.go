@@ -193,6 +193,14 @@ func (p *MirrorProxy) handleHTTPRequest(req *http.Request, conn net.Conn) {
 		req.Body.Close()
 	}
 
+	// 确保URL包含scheme和host，否则镜像和转发都会失败
+	if req.URL.Scheme == "" {
+		req.URL.Scheme = "http"
+	}
+	if req.URL.Host == "" {
+		req.URL.Host = req.Host
+	}
+
 	// 异步镜像
 	go p.mirror.Send(req, bodyBytes)
 
@@ -304,6 +312,10 @@ func (p *MirrorProxy) handleH2MITM(clientConn net.Conn, hostPort string) {
 			bodyBytes, _ = io.ReadAll(r.Body)
 			r.Body.Close()
 		}
+
+		// HTTP/2的r.URL只有path（来自:path伪头部），需要补全scheme和host
+		r.URL.Scheme = "https"
+		r.URL.Host = hostPort
 
 		// 异步镜像
 		go p.mirror.Send(r, bodyBytes)

@@ -21,6 +21,7 @@ import (
 	"github.com/xray-distribute/internal/recordproxy"
 	"github.com/xray-distribute/internal/reverse"
 	"github.com/xray-distribute/internal/store"
+	"github.com/xray-distribute/internal/updater"
 	"github.com/xray-distribute/internal/webhook"
 	"github.com/xray-distribute/internal/xray"
 	"github.com/xray-distribute/web"
@@ -146,33 +147,39 @@ func main() {
 						"remote", interaction.RemoteAddress)
 					continue
 				}
-				request := interaction.RawRequest
 				description := fmt.Sprintf("Remote address: %s", interaction.RemoteAddress)
 				detail := map[string]interface{}{
-					"oob_protocol": interaction.Protocol,
-					"oob_full_id":  interaction.FullID,
-					"oob_request":  interaction.RawRequest,
-					"oob_response": interaction.RawResponse,
+					"oob_protocol":    interaction.Protocol,
+					"oob_full_id":     interaction.FullID,
+					"oob_request":     interaction.RawRequest,
+					"oob_response":    interaction.RawResponse,
+					"remote_address":  interaction.RemoteAddress,
 				}
-				request = match.Raw
-				description = fmt.Sprintf("Remote address: %s; matched %s request #%d: %s", interaction.RemoteAddress, match.Source, match.ID, match.URL)
-				detail["matched_source"] = match.Source
-				detail["matched_id"] = match.ID
-				detail["matched_method"] = match.Method
-				detail["matched_url"] = match.URL
-				detail["matched_raw"] = match.Raw
-				detail["matched_created_at"] = match.CreatedAt
+				vulnURL := interaction.FullID
+				request := interaction.RawRequest
+				response := interaction.RawResponse
+				if match != nil {
+					request = match.Raw
+					vulnURL = match.URL
+					description = fmt.Sprintf("Remote address: %s; matched %s request: %s %s", interaction.RemoteAddress, match.Source, match.Method, match.URL)
+					detail["matched_source"] = match.Source
+					detail["matched_id"] = match.ID
+					detail["matched_method"] = match.Method
+					detail["matched_url"] = match.URL
+					detail["matched_raw"] = match.Raw
+					detail["matched_created_at"] = match.CreatedAt
+				}
 				detailJSON, _ := json.Marshal(detail)
 				vuln := &model.Vulnerability{
 					ID:          fmt.Sprintf("oob-%s-%s-%d", interaction.Protocol, interaction.FullID, interaction.Timestamp.UnixNano()),
 					Plugin:      "interactsh",
-					URL:         interaction.FullID,
+					URL:         vulnURL,
 					VulnClass:   "oob-interaction",
 					Severity:    "medium",
 					Title:       fmt.Sprintf("OOB interaction received (%s)", interaction.Protocol),
 					Description: description,
 					Request:     request,
-					Response:    interaction.RawResponse,
+					Response:    response,
 					Detail:      string(detailJSON),
 					CreatedAt:   interaction.Timestamp,
 				}
@@ -219,6 +226,11 @@ func main() {
 		}
 	}()
 
+	// 启动自动更新检查
+	updateChecker := updater.NewUpdateChecker(updater.ComponentServer, logger)
+	updateChecker.Start()
+	logger.Info("auto update checker started", "current_version", updater.Version)
+
 	// 输出Agent连接URI
 	agentURI := config.GenerateAgentURI(cfg)
 	publicIP := config.GetPublicIP()
@@ -230,7 +242,7 @@ func main() {
 
 	fmt.Println()
 	fmt.Println("========================================")
-	fmt.Println("  XRay-Distribute Server Started")
+	fmt.Printf("  XRay-Distribute Server v%s\n", updater.Version)
 	fmt.Println("========================================")
 	fmt.Printf("  Web Panel:  http://%s%s\n", displayHost, cfg.Server.HTTP)
 	fmt.Printf("  API:        http://%s%s\n", displayHost, cfg.Server.API)
@@ -254,6 +266,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	updateChecker.Stop()
 	xrayMgr.Stop()
 	if reverseMgr != nil {
 		reverseMgr.Stop()

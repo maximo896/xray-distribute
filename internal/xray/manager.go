@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -107,8 +108,8 @@ func (m *Manager) Start(name string) error {
 
 	args = append(args, "webscan", "--listen", m.listenAddr)
 
-	htmlOutput := filepath.Join(m.dataDir, fmt.Sprintf("xray_%s.html", timestamp))
-	jsonOutput := filepath.Join(m.dataDir, fmt.Sprintf("xray_%s.json", timestamp))
+	htmlOutput := fmt.Sprintf("xray_%s.html", timestamp)
+	jsonOutput := fmt.Sprintf("xray_%s.json", timestamp)
 	args = append(args, "--html-output", htmlOutput, "--json-output", jsonOutput)
 
 	if m.webhookURL != "" {
@@ -143,8 +144,8 @@ func (m *Manager) Start(name string) error {
 		status:  "running",
 		started: time.Now(),
 		config:  configPath,
-		html:    htmlOutput,
-		json:    jsonOutput,
+		html:    filepath.Join(m.dataDir, htmlOutput),
+		json:    filepath.Join(m.dataDir, jsonOutput),
 	}
 	m.instance = instance
 
@@ -246,6 +247,9 @@ func (m *Manager) SendToXRay(req *model.MirrorRequest) error {
 			Timeout: 15 * time.Second,
 			Transport: &http.Transport{
 				Proxy: http.ProxyURL(proxyURL),
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: true, // xray是扫描器，不需要验证证书
+				},
 			},
 		}
 

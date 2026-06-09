@@ -14,6 +14,7 @@ import (
 	"github.com/xray-distribute/internal/config"
 	"github.com/xray-distribute/internal/mirror"
 	"github.com/xray-distribute/internal/proxy"
+	"github.com/xray-distribute/internal/updater"
 )
 
 const defaultConfigFile = "agent.yaml"
@@ -103,7 +104,12 @@ func main() {
 
 	logger.Info("agent started",
 		"listen", cfg.Proxy.Listen,
-		"server", cfg.Server.Address)
+		"server", cfg.Server.Address,
+		"version", updater.Version)
+
+	// 启动自动更新检查
+	updateChecker := updater.NewUpdateChecker(updater.ComponentAgent, logger)
+	updateChecker.Start()
 
 	// 等待退出信号
 	quit := make(chan os.Signal, 1)
@@ -115,6 +121,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	updateChecker.Stop()
 	p.Stop(ctx)
 	sender.Stop()
 

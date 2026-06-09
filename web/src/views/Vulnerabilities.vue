@@ -86,22 +86,64 @@
           <el-descriptions-item label="修复建议" :span="2">{{ currentVuln.solution || '无' }}</el-descriptions-item>
         </el-descriptions>
 
-        <div v-if="currentVuln.request" style="margin-top: 16px">
-          <h4 style="color: var(--app-muted); margin-bottom: 8px">请求包</h4>
-          <pre class="code-block">{{ currentVuln.request }}</pre>
-        </div>
+        <!-- OOB交互详情 -->
+        <template v-if="oobDetail">
+          <div style="margin-top: 16px">
+            <h4 style="color: var(--app-muted); margin-bottom: 8px">OOB反连交互</h4>
+            <el-descriptions :column="2" border size="small">
+              <el-descriptions-item label="交互协议">{{ oobDetail.oob_protocol }}</el-descriptions-item>
+              <el-descriptions-item label="交互ID">{{ oobDetail.oob_full_id }}</el-descriptions-item>
+              <el-descriptions-item label="远端地址" :span="2">{{ oobDetail.remote_address || '-' }}</el-descriptions-item>
+            </el-descriptions>
+          </div>
 
-        <div v-if="currentVuln.response" style="margin-top: 16px">
-          <h4 style="color: var(--app-muted); margin-bottom: 8px">响应包</h4>
-          <pre class="code-block">{{ currentVuln.response }}</pre>
-        </div>
+          <div v-if="oobDetail.matched_source" style="margin-top: 12px">
+            <h4 style="color: var(--app-muted); margin-bottom: 8px">匹配到的原始请求</h4>
+            <el-descriptions :column="2" border size="small">
+              <el-descriptions-item label="来源">{{ oobDetail.matched_source }}</el-descriptions-item>
+              <el-descriptions-item label="请求方法">{{ oobDetail.matched_method }}</el-descriptions-item>
+              <el-descriptions-item label="请求URL" :span="2">
+                <a :href="oobDetail.matched_url" target="_blank" class="url-link">{{ oobDetail.matched_url }}</a>
+              </el-descriptions-item>
+              <el-descriptions-item label="匹配时间" :span="2">{{ oobDetail.matched_created_at || '-' }}</el-descriptions-item>
+            </el-descriptions>
+          </div>
+
+          <div v-if="oobDetail.matched_raw" style="margin-top: 12px">
+            <h4 style="color: var(--app-muted); margin-bottom: 8px">打到目标的完整请求</h4>
+            <pre class="code-block">{{ oobDetail.matched_raw }}</pre>
+          </div>
+
+          <div v-if="oobDetail.oob_request" style="margin-top: 12px">
+            <h4 style="color: var(--app-muted); margin-bottom: 8px">OOB回调请求（目标发往反连平台的请求）</h4>
+            <pre class="code-block">{{ oobDetail.oob_request }}</pre>
+          </div>
+
+          <div v-if="oobDetail.oob_response" style="margin-top: 12px">
+            <h4 style="color: var(--app-muted); margin-bottom: 8px">OOB回调响应（反连平台返回的响应）</h4>
+            <pre class="code-block">{{ oobDetail.oob_response }}</pre>
+          </div>
+        </template>
+
+        <!-- 非OOB漏洞的请求/响应 -->
+        <template v-if="!oobDetail">
+          <div v-if="currentVuln.request" style="margin-top: 16px">
+            <h4 style="color: var(--app-muted); margin-bottom: 8px">请求包</h4>
+            <pre class="code-block">{{ currentVuln.request }}</pre>
+          </div>
+
+          <div v-if="currentVuln.response" style="margin-top: 16px">
+            <h4 style="color: var(--app-muted); margin-bottom: 8px">响应包</h4>
+            <pre class="code-block">{{ currentVuln.response }}</pre>
+          </div>
+        </template>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import api from '../utils/api'
 
 const vulns = ref([])
@@ -113,6 +155,15 @@ const pageSize = ref(20)
 const total = ref(0)
 const detailVisible = ref(false)
 const currentVuln = ref(null)
+
+const oobDetail = computed(() => {
+  if (!currentVuln.value || !currentVuln.value.detail) return null
+  try {
+    const d = JSON.parse(currentVuln.value.detail)
+    if (d.oob_protocol) return d
+  } catch {}
+  return null
+})
 
 const severityType = (s) => ({ high: 'danger', medium: 'warning', low: 'success', info: 'info' }[s] || 'info')
 const severityLabel = (s) => ({ high: '高危', medium: '中危', low: '低危', info: '信息' }[s] || s)

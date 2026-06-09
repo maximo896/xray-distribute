@@ -57,61 +57,61 @@ jobs:
           cp data/certs/ca.crt data/certs/ca.key xray-distribute-server/data/certs/ 2>/dev/null || true
 
           cat > xray-distribute-server/config.yaml << 'CFG'
-server:
-  http: ":8090"
-  api: ":8081"
-  token: "your-secret-token"
+          server:
+            http: ":8090"
+            api: ":8081"
+            token: "your-secret-token"
 
-xray:
-  binary: "data/xray"
-  config: ""
-  data_dir: "./data"
-  listen: "127.0.0.1:7777"
-  level: ""
-  plugins: ""
-  webhook_url: ""
-  auto_start: true
+          xray:
+            binary: "data/xray"
+            config: ""
+            data_dir: "./data"
+            listen: "127.0.0.1:7777"
+            level: ""
+            plugins: ""
+            webhook_url: ""
+            auto_start: true
 
-reverse:
-  enabled: true
-  mode: "interactsh"
-  token: ""
-  interactsh_server: "https://oast.fun"
-  interactsh_token: ""
-  adapter_listen: "127.0.0.1:9900"
-  domain: ""
-  listen_ip: "127.0.0.1"
-  dns_port: 53
-  http_port: 80
-  dns_is_ns: false
+          reverse:
+            enabled: true
+            mode: "interactsh"
+            token: ""
+            interactsh_server: "https://oast.fun"
+            interactsh_token: ""
+            adapter_listen: "127.0.0.1:9900"
+            domain: ""
+            listen_ip: "127.0.0.1"
+            dns_port: 53
+            http_port: 80
+            dns_is_ns: false
 
-webhook:
-  enabled: true
-  min_severity: "medium"
+          webhook:
+            enabled: true
+            min_severity: "medium"
 
-db:
-  type: "sqlite"
-  dsn: "./data/xray-distribute.db"
+          db:
+            type: "sqlite"
+            dsn: "./data/xray-distribute.db"
 
-log:
-  level: "info"
-  output: "stdout"
-CFG
+          log:
+            level: "info"
+            output: "stdout"
+          CFG
 
           cat > xray-distribute-server/start.sh << 'SH'
-#!/bin/bash
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$SCRIPT_DIR"
-if [ ! -f "data/xray" ]; then
-    echo "[!] data/xray not found! Please download xray linux binary from:"
-    echo "    https://github.com/chaitin/xray/releases"
-    echo "    and put it in data/xray"
-    exit 1
-fi
-chmod +x data/xray xray-distribute
-echo "[*] Starting XRay-Distribute Server..."
-./xray-distribute -config config.yaml
-SH
+          #!/bin/bash
+          SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+          cd "$SCRIPT_DIR"
+          if [ ! -f "data/xray" ]; then
+              echo "[!] data/xray not found! Please download xray linux binary from:"
+              echo "    https://github.com/chaitin/xray/releases"
+              echo "    and put it in data/xray"
+              exit 1
+          fi
+          chmod +x data/xray xray-distribute
+          echo "[*] Starting XRay-Distribute Server..."
+          ./xray-distribute -config config.yaml
+          SH
           chmod +x xray-distribute-server/start.sh
 
       - name: Prepare local agent package
@@ -119,33 +119,33 @@ SH
           mkdir -p xray-distribute-local
 
           cat > xray-distribute-local/start-agent.bat << 'BAT'
-@echo off
-chcp 65001 >nul
-echo ========================================
-echo   XRay-Distribute Agent
-echo ========================================
-echo.
-echo [*] First time: agent.exe xray://token@host:port
-echo [*] After that: just run agent.exe
-echo [*] Set browser proxy to 127.0.0.1:9090 to start scanning
-echo.
-agent.exe %1
-pause
-BAT
+          @echo off
+          chcp 65001 >nul
+          echo ========================================
+          echo   XRay-Distribute Agent
+          echo ========================================
+          echo.
+          echo [*] First time: agent.exe xray://token@host:port
+          echo [*] After that: just run agent.exe
+          echo [*] Set browser proxy to 127.0.0.1:9090 to start scanning
+          echo.
+          agent.exe %1
+          pause
+          BAT
 
           cat > xray-distribute-local/start-agent.sh << 'SH'
-#!/bin/bash
-echo "========================================"
-echo "  XRay-Distribute Agent"
-echo "========================================"
-echo ""
-echo "[*] First time: ./agent xray://token@host:port"
-echo "[*] After that: just run ./agent"
-echo "[*] Set browser proxy to 127.0.0.1:9090 to start scanning"
-echo ""
-chmod +x agent
-./agent "$@"
-SH
+          #!/bin/bash
+          echo "========================================"
+          echo "  XRay-Distribute Agent"
+          echo "========================================"
+          echo ""
+          echo "[*] First time: ./agent xray://token@host:port"
+          echo "[*] After that: just run ./agent"
+          echo "[*] Set browser proxy to 127.0.0.1:9090 to start scanning"
+          echo ""
+          chmod +x agent
+          ./agent "$@"
+          SH
           chmod +x xray-distribute-local/start-agent.sh
 
       - name: Download xray Linux binary

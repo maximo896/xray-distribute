@@ -36,7 +36,6 @@ type Manager struct {
 	generatedConfig string
 	logs            []model.XRayLogEntry
 	maxLogs         int
-	generatedOOB    map[string]time.Time
 }
 
 type xrayInstance struct {
@@ -59,18 +58,17 @@ func NewManager(binary, config, dataDir, listenAddr, webhookURL, level, plugins 
 	}
 
 	return &Manager{
-		binary:       binary,
-		config:       config,
-		dataDir:      dataDir,
-		listenAddr:   listenAddr,
-		webhookURL:   webhookURL,
-		level:        level,
-		plugins:      plugins,
-		logger:       logger,
-		vulnChan:     make(chan *model.Vulnerability, 1000),
-		logs:         make([]model.XRayLogEntry, 0, 300),
-		maxLogs:      300,
-		generatedOOB: make(map[string]time.Time),
+		binary:     binary,
+		config:     config,
+		dataDir:    dataDir,
+		listenAddr: listenAddr,
+		webhookURL: webhookURL,
+		level:      level,
+		plugins:    plugins,
+		logger:     logger,
+		vulnChan:   make(chan *model.Vulnerability, 1000),
+		logs:       make([]model.XRayLogEntry, 0, 300),
+		maxLogs:    300,
 	}
 }
 
@@ -304,73 +302,9 @@ func (m *Manager) parseStdout(reader io.Reader) {
 				continue
 			}
 		}
-		m.recordGeneratedOOBDomain(line)
 		m.addLog("info", line)
 		m.logger.Info("xray stdout", "msg", line)
 	}
-}
-
-func (m *Manager) IsGeneratedOOB(fullID string) bool {
-	fullID = normalizeOOBDomain(fullID)
-	if fullID == "" {
-		return false
-	}
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.pruneGeneratedOOBLocked(time.Now())
-	_, ok := m.generatedOOB[fullID]
-	return ok
-}
-
-func (m *Manager) recordGeneratedOOBDomain(line string) {
-	const marker = "domain is :"
-	i := strings.Index(line, marker)
-	if i < 0 {
-		return
-	}
-	domain := normalizeOOBDomain(line[i+len(marker):])
-	if domain == "" {
-		return
-	}
-
-	now := time.Now()
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.generatedOOB[domain] = now
-	m.pruneGeneratedOOBLocked(now)
-}
-
-func (m *Manager) pruneGeneratedOOBLocked(now time.Time) {
-	const maxGeneratedOOB = 5000
-	const generatedOOBTTL = 2 * time.Hour
-
-	for domain, ts := range m.generatedOOB {
-		if now.Sub(ts) > generatedOOBTTL {
-			delete(m.generatedOOB, domain)
-		}
-	}
-	if len(m.generatedOOB) <= maxGeneratedOOB {
-		return
-	}
-	for domain := range m.generatedOOB {
-		delete(m.generatedOOB, domain)
-		if len(m.generatedOOB) <= maxGeneratedOOB {
-			return
-		}
-	}
-}
-
-func normalizeOOBDomain(s string) string {
-	s = strings.TrimSpace(s)
-	if fields := strings.Fields(s); len(fields) > 0 {
-		s = fields[0]
-	}
-	s = strings.Trim(strings.TrimSpace(s), ".")
-	if s == "" {
-		return ""
-	}
-	return strings.ToLower(s)
 }
 
 func (m *Manager) parseVulnsFromRaw(raw json.RawMessage) []*model.Vulnerability {

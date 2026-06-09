@@ -181,9 +181,18 @@ func (t *DB) init() error {
 			remote_address text, timestamp integer, matched_source string,
 			matched_id integer, created_at text
 		)`,
+		`create table if not exists request_tokens (
+			id integer primary key autoincrement,
+			token text not null,
+			source text not null,
+			request_id integer not null,
+			created_at text
+		)`,
 		`create index if not exists idx_mirror_created_at on mirror_traffic(created_at)`,
 		`create index if not exists idx_xray_created_at on xray_requests(created_at)`,
 		`create index if not exists idx_oob_full_id on oob_interactions(full_id)`,
+		`create index if not exists idx_request_tokens_token on request_tokens(token)`,
+		`create index if not exists idx_request_tokens_source_id on request_tokens(source, request_id)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := t.db.Exec(stmt); err != nil {
@@ -205,7 +214,14 @@ func (t *DB) RecordMirror(req *model.MirrorRequest) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return res.LastInsertId()
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	if err := recordRequestTokens(t.db, "mirror", id, req.URL, raw, string(req.Body)); err != nil {
+		return 0, err
+	}
+	return id, nil
 }
 
 func (t *DB) RecordXRayRequest(method, url string, headers map[string][]string, body []byte, status int, response string) (int64, error) {
@@ -220,7 +236,14 @@ func (t *DB) RecordXRayRequest(method, url string, headers map[string][]string, 
 	if err != nil {
 		return 0, err
 	}
-	return res.LastInsertId()
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	if err := recordRequestTokens(t.db, "xray", id, url, raw, string(body)); err != nil {
+		return 0, err
+	}
+	return id, nil
 }
 
 func (t *DB) RecordOOB(interaction model.OOBInteraction) (*Match, error) {
@@ -228,11 +251,20 @@ func (t *DB) RecordOOB(interaction model.OOBInteraction) (*Match, error) {
 	defer t.mu.RUnlock()
 
 	// 先在当前db中查找匹配
-	match, _ := t.findMatchByNeedles(interactionNeedles(interaction))
+	needles := interactionNeedles(interaction)
+	tokens := candidateIDs(interaction.FullID)
+
+	match, _ := findMatchByTokensInDB(t.db, tokens)
+	if match == nil {
+		match, _ = t.findMatchAcrossDBsByTokens(tokens)
+	}
+	if match == nil {
+		match, _ = t.findMatchByNeedles(needles)
+	}
 
 	// 如果当前db没找到，跨所有db查找
 	if match == nil {
-		match, _ = t.findMatchAcrossDBs(interactionNeedles(interaction))
+		match, _ = t.findMatchAcrossDBs(needles)
 	}
 
 	var source string
@@ -252,14 +284,26 @@ func (t *DB) FindMatch(fullID string) (*Match, error) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
+	tokens := candidateIDs(fullID)
+	if m, err := findMatchByTokensInDB(t.db, tokens); err != nil {
+		return nil, err
+	} else if m != nil {
+		return m, nil
+	}
+	if m, err := t.findMatchAcrossDBsByTokens(tokens); err != nil {
+		return nil, err
+	} else if m != nil {
+		return m, nil
+	}
+
 	// 先在当前db查找
-	if m, err := t.findMatchByNeedles(candidateIDs(fullID)); err != nil {
+	if m, err := t.findMatchByNeedles(tokens); err != nil {
 		return nil, err
 	} else if m != nil {
 		return m, nil
 	}
 	// 跨所有db查找
-	return t.findMatchAcrossDBs(candidateIDs(fullID))
+	return t.findMatchAcrossDBs(tokens)
 }
 
 // findMatchAcrossDBs 跨所有db文件查找匹配
@@ -281,6 +325,34 @@ func (t *DB) findMatchAcrossDBs(needles []string) (*Match, error) {
 			continue
 		}
 		m, err := findMatchInDB(db, needles)
+		db.Close()
+		if err != nil {
+			continue
+		}
+		if m != nil {
+			return m, nil
+		}
+	}
+	return nil, nil
+}
+
+func (t *DB) findMatchAcrossDBsByTokens(tokens []string) (*Match, error) {
+	entries, err := filepath.Glob(filepath.Join(t.dbDir, "traffic-????.??-??*.db"))
+	if err != nil {
+		return nil, err
+	}
+
+	sort.Sort(sort.Reverse(sort.StringSlice(entries)))
+
+	for _, entry := range entries {
+		if entry == t.dbPath {
+			continue
+		}
+		db, err := openSQLite(entry)
+		if err != nil {
+			continue
+		}
+		m, err := findMatchByTokensInDB(db, tokens)
 		db.Close()
 		if err != nil {
 			continue
@@ -322,6 +394,56 @@ func findInDB(db *sql.DB, table, needle string) (*Match, error) {
 	}
 	row := db.QueryRow(fmt.Sprintf(`select id, method, url, raw, created_at from %s
 		where url like ? or raw like ? order by id desc limit 1`, table), "%"+needle+"%", "%"+needle+"%")
+	var m Match
+	m.Source = source
+	err := row.Scan(&m.ID, &m.Method, &m.URL, &m.Raw, &m.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
+func findMatchByTokensInDB(db *sql.DB, tokens []string) (*Match, error) {
+	tokens = uniqueStrings(tokens)
+	for _, token := range tokens {
+		row := db.QueryRow(`select source, request_id from request_tokens
+			where token = ? order by id desc limit 1`, strings.ToLower(token))
+		var source string
+		var requestID int64
+		err := row.Scan(&source, &requestID)
+		if err == sql.ErrNoRows {
+			continue
+		}
+		if err != nil {
+			if strings.Contains(strings.ToLower(err.Error()), "no such table") {
+				return nil, nil
+			}
+			return nil, err
+		}
+		m, err := findByIDInDB(db, source, requestID)
+		if err != nil {
+			return nil, err
+		}
+		if m != nil {
+			return m, nil
+		}
+	}
+	return nil, nil
+}
+
+func findByIDInDB(db *sql.DB, source string, id int64) (*Match, error) {
+	table := "mirror_traffic"
+	if source == "xray" {
+		table = "xray_requests"
+	} else if source != "mirror" {
+		return nil, nil
+	}
+
+	row := db.QueryRow(fmt.Sprintf(`select id, method, url, raw, created_at from %s
+		where id = ? limit 1`, table), id)
 	var m Match
 	m.Source = source
 	err := row.Scan(&m.ID, &m.Method, &m.URL, &m.Raw, &m.CreatedAt)
@@ -417,6 +539,66 @@ func isLikelyCorrelationID(label string) bool {
 		return false
 	}
 	return true
+}
+
+func recordRequestTokens(db *sql.DB, source string, requestID int64, values ...string) error {
+	tokens := make([]string, 0, 8)
+	for _, value := range values {
+		tokens = append(tokens, extractRequestTokens(value)...)
+	}
+	tokens = uniqueStrings(tokens)
+	if len(tokens) == 0 {
+		return nil
+	}
+	if len(tokens) > 64 {
+		tokens = tokens[:64]
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	stmt, err := tx.Prepare(`insert into request_tokens(token,source,request_id,created_at) values(?,?,?,?)`)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	defer stmt.Close()
+
+	now := time.Now().Format(time.RFC3339Nano)
+	for _, token := range tokens {
+		if _, err := stmt.Exec(strings.ToLower(token), source, requestID, now); err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func extractRequestTokens(value string) []string {
+	value = strings.ToLower(value)
+	if value == "" {
+		return nil
+	}
+	parts := strings.FieldsFunc(value, func(r rune) bool {
+		return !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '.')
+	})
+
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.Trim(part, ".")
+		if part == "" {
+			continue
+		}
+		if strings.Contains(part, ".") {
+			out = append(out, candidateIDs(part)...)
+			continue
+		}
+		if isLikelyCorrelationID(part) {
+			out = append(out, part)
+		}
+	}
+	return uniqueStrings(out)
 }
 
 func interactionNeedles(interaction model.OOBInteraction) []string {

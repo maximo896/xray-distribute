@@ -7,23 +7,45 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/xray-distribute/internal/trafficdb"
 )
 
+const recordQueueSize = 65536
+
 type Proxy struct {
-	addr   string
-	db     *trafficdb.DB
-	logger *slog.Logger
-	server *http.Server
+	addr     string
+	db       *trafficdb.DB
+	logger   *slog.Logger
+	server   *http.Server
+	recordCh chan recordJob
+	once     sync.Once
+}
+
+type recordJob struct {
+	method   string
+	url      string
+	headers  map[string][]string
+	body     []byte
+	status   int
+	response string
 }
 
 func New(addr string, db *trafficdb.DB, logger *slog.Logger) *Proxy {
-	return &Proxy{addr: addr, db: db, logger: logger}
+	return &Proxy{
+		addr:     addr,
+		db:       db,
+		logger:   logger,
+		recordCh: make(chan recordJob, recordQueueSize),
+	}
 }
 
 func (p *Proxy) Start() error {
+	p.once.Do(func() {
+		go p.recordWorker()
+	})
 	p.server = &http.Server{
 		Handler:      p,
 		ReadTimeout:  30 * time.Second,
@@ -40,6 +62,17 @@ func (p *Proxy) Start() error {
 	}()
 	p.logger.Info("recording proxy started", "addr", p.addr)
 	return nil
+}
+
+func (p *Proxy) recordWorker() {
+	for job := range p.recordCh {
+		if p.db == nil {
+			continue
+		}
+		if _, err := p.db.RecordXRayRequest(job.method, job.url, job.headers, job.body, job.status, job.response); err != nil {
+			p.logger.Warn("record xray request failed", "error", err, "url", job.url)
+		}
+	}
 }
 
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -61,13 +94,7 @@ func (p *Proxy) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	headers := cloneHeader(r.Header)
-	status := 0
-	var respPreview string
-	if p.db != nil {
-		if _, err := p.db.RecordXRayRequest(r.Method, targetURL, headers, body, status, respPreview); err != nil {
-			p.logger.Warn("record xray request failed", "error", err, "url", targetURL)
-		}
-	}
+	p.enqueueRecord(recordJob{method: r.Method, url: targetURL, headers: headers, body: body})
 
 	outReq, err := http.NewRequest(r.Method, targetURL, bytes.NewReader(body))
 	if err != nil {
@@ -83,7 +110,6 @@ func (p *Proxy) handleHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer resp.Body.Close()
-	status = resp.StatusCode
 
 	for k, vals := range resp.Header {
 		for _, v := range vals {
@@ -91,15 +117,11 @@ func (p *Proxy) handleHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.WriteHeader(resp.StatusCode)
-	preview := &limitedBuffer{limit: 4096}
-	_, _ = io.Copy(w, io.TeeReader(resp.Body, preview))
-	respPreview = preview.String()
+	_, _ = io.Copy(w, resp.Body)
 }
 
 func (p *Proxy) handleConnect(w http.ResponseWriter, r *http.Request) {
-	if p.db != nil {
-		_, _ = p.db.RecordXRayRequest(r.Method, r.Host, cloneHeader(r.Header), nil, 0, "")
-	}
+	p.enqueueRecord(recordJob{method: r.Method, url: r.Host, headers: cloneHeader(r.Header)})
 
 	hj, ok := w.(http.Hijacker)
 	if !ok {
@@ -125,6 +147,17 @@ func (p *Proxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 	go transfer(clientConn, serverConn)
 }
 
+func (p *Proxy) enqueueRecord(job recordJob) {
+	if p.db == nil {
+		return
+	}
+	select {
+	case p.recordCh <- job:
+	default:
+		p.logger.Warn("recording proxy queue full, dropping request record", "method", job.method, "url", job.url)
+	}
+}
+
 func transfer(dst net.Conn, src net.Conn) {
 	defer dst.Close()
 	defer src.Close()
@@ -139,25 +172,4 @@ func cloneHeader(h http.Header) map[string][]string {
 		out[k] = cp
 	}
 	return out
-}
-
-type limitedBuffer struct {
-	buf   bytes.Buffer
-	limit int
-}
-
-func (b *limitedBuffer) Write(p []byte) (int, error) {
-	if b.buf.Len() < b.limit {
-		remain := b.limit - b.buf.Len()
-		if len(p) > remain {
-			_, _ = b.buf.Write(p[:remain])
-		} else {
-			_, _ = b.buf.Write(p)
-		}
-	}
-	return len(p), nil
-}
-
-func (b *limitedBuffer) String() string {
-	return b.buf.String()
 }

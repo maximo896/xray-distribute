@@ -103,6 +103,44 @@ func TestRecordOOBDoesNotMatchCommonShortSubdomainLabels(t *testing.T) {
 	}
 }
 
+func TestRecordOOBMatchesIndexedXRayToken(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "traffic.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	oobDomain := "i-adb175-6zdq-r5pb.d8k7rr2aikaevhsch1mgo7ragtx84dq49.ukukk.uk"
+	id, err := db.RecordXRayRequest(
+		"POST",
+		"http://target.local/vuln",
+		map[string][]string{"Content-Type": {"application/x-www-form-urlencoded"}},
+		[]byte("callback=http://"+oobDomain+"/ping"),
+		0,
+		"",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	match, err := db.RecordOOB(model.OOBInteraction{
+		Protocol:      "dns",
+		FullID:        oobDomain + ".",
+		RawRequest:    ";; QUESTION SECTION:\n;" + oobDomain + ".\tIN\tA\n",
+		RemoteAddress: "127.0.0.1",
+		Timestamp:     time.Now(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if match == nil {
+		t.Fatal("expected OOB interaction to match indexed xray token")
+	}
+	if match.Source != "xray" || match.ID != id {
+		t.Fatalf("expected xray request %d, got %#v", id, match)
+	}
+}
+
 func TestCandidateIDsOnlyIncludesLikelyCorrelationPrefix(t *testing.T) {
 	cases := map[string][]string{
 		"www.ukukk.uk":            nil,

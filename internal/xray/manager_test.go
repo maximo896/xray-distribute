@@ -134,15 +134,3 @@ func TestParseVulnFromRawIgnoresNonVulnEvents(t *testing.T) {
 		t.Fatalf("expected non-vuln event to be ignored: %#v", v)
 	}
 }
-
-func TestGeneratedOOBDomainTracking(t *testing.T) {
-	m := NewManager("", "", "", "", "", "", "", nil)
-	m.recordGeneratedOOBDomain("[INFO] 2026-06-09 21:12:21 [runner client:reverse.go:23] domain is : i-adb175-6zdq-r5pb.d8k7rr2aikaevhsch1mgo7ragtx84dq49.ukukk.uk")
-
-	if !m.IsGeneratedOOB("I-ADB175-6ZDQ-R5PB.d8k7rr2aikaevhsch1mgo7ragtx84dq49.ukukk.uk.") {
-		t.Fatal("expected generated OOB domain to match case-insensitively with trailing dot")
-	}
-	if m.IsGeneratedOOB("www.ukukk.uk") {
-		t.Fatal("did not expect ordinary domain to match generated OOB list")
-	}
-}

@@ -140,8 +140,7 @@ func main() {
 				if err != nil {
 					logger.Warn("record OOB interaction failed", "error", err, "full_id", interaction.FullID)
 				}
-				generatedByXRay := match == nil && xrayMgr.IsGeneratedOOB(interaction.FullID)
-				if match == nil && !generatedByXRay {
+				if match == nil {
 					logger.Debug("OOB interaction ignored (no matching request)",
 						"protocol", interaction.Protocol,
 						"full_id", interaction.FullID,
@@ -156,24 +155,16 @@ func main() {
 					"oob_response":   interaction.RawResponse,
 					"remote_address": interaction.RemoteAddress,
 				}
-				if generatedByXRay {
-					description = fmt.Sprintf("Remote address: %s; matched xray generated OOB payload: %s", interaction.RemoteAddress, interaction.FullID)
-					detail["matched_source"] = "xray-generated"
-				}
-				vulnURL := interaction.FullID
-				request := interaction.RawRequest
+				request := match.Raw
+				vulnURL := match.URL
 				response := interaction.RawResponse
-				if match != nil {
-					request = match.Raw
-					vulnURL = match.URL
-					description = fmt.Sprintf("Remote address: %s; matched %s request: %s %s", interaction.RemoteAddress, match.Source, match.Method, match.URL)
-					detail["matched_source"] = match.Source
-					detail["matched_id"] = match.ID
-					detail["matched_method"] = match.Method
-					detail["matched_url"] = match.URL
-					detail["matched_raw"] = match.Raw
-					detail["matched_created_at"] = match.CreatedAt
-				}
+				description = fmt.Sprintf("Remote address: %s; matched %s request: %s %s", interaction.RemoteAddress, match.Source, match.Method, match.URL)
+				detail["matched_source"] = match.Source
+				detail["matched_id"] = match.ID
+				detail["matched_method"] = match.Method
+				detail["matched_url"] = match.URL
+				detail["matched_raw"] = match.Raw
+				detail["matched_created_at"] = match.CreatedAt
 				detailJSON, _ := json.Marshal(detail)
 				vuln := &model.Vulnerability{
 					ID:          fmt.Sprintf("oob-%s-%s-%d", interaction.Protocol, interaction.FullID, interaction.Timestamp.UnixNano()),

@@ -456,22 +456,35 @@ func uniqueStrings(values []string) []string {
 }
 
 func rawMirror(req *model.MirrorRequest) string {
-	return rawHTTP(req.Method, req.URL, req.Headers, req.Body)
+	return rawHTTPWithHost(req.Method, req.URL, req.Host, req.Headers, req.Body)
 }
 
 func rawHTTP(method, url string, headers map[string][]string, body []byte) string {
+	return rawHTTPWithHost(method, url, "", headers, body)
+}
+
+func rawHTTPWithHost(method, url, host string, headers map[string][]string, body []byte) string {
 	var b strings.Builder
 	b.WriteString(method)
 	b.WriteByte(' ')
 	b.WriteString(url)
 	b.WriteString(" HTTP/1.1\r\n")
+	hasHost := false
 	for k, vals := range headers {
+		if strings.EqualFold(k, "Host") {
+			hasHost = true
+		}
 		for _, v := range vals {
 			b.WriteString(k)
 			b.WriteString(": ")
 			b.WriteString(v)
 			b.WriteString("\r\n")
 		}
+	}
+	if host != "" && !hasHost {
+		b.WriteString("Host: ")
+		b.WriteString(host)
+		b.WriteString("\r\n")
 	}
 	b.WriteString("\r\n")
 	b.Write(body)

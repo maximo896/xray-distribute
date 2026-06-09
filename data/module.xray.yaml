@@ -42,7 +42,7 @@ Reverse:
         domain: ""
         enabled: false
         is_domain_name_server: false
-        listen_ip: 0.0.0.0
+        listen_ip: 127.0.0.1
         resolve:
             - record: localhost
               ttl: 60
@@ -51,7 +51,7 @@ Reverse:
     http:
         enabled: false
         ip_header: ""
-        listen_ip: 0.0.0.0
+        listen_ip: 127.0.0.1
         listen_port: ""
     rmi:
         enabled: false

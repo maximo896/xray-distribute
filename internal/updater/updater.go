@@ -269,13 +269,6 @@ func (uc *UpdateChecker) Stop() {
 func (uc *UpdateChecker) run() {
 	defer close(uc.doneCh)
 
-	// 首次启动延迟 1 分钟再检查，避免影响启动速度
-	select {
-	case <-time.After(1 * time.Minute):
-	case <-uc.stopCh:
-		return
-	}
-
 	ticker := time.NewTicker(uc.interval)
 	defer ticker.Stop()
 

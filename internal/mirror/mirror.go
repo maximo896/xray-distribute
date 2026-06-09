@@ -220,6 +220,7 @@ func (s *Sender) Send(r *http.Request, body []byte) {
 	req := &model.MirrorRequest{
 		Method:    r.Method,
 		URL:       r.URL.String(),
+		Host:      r.Host,
 		Headers:   r.Header,
 		Body:      body,
 		Timestamp: time.Now().Unix(),

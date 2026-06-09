@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -127,7 +128,9 @@ func ParseAgentURI(uri string) (*AgentConfig, error) {
 	q := u.Query()
 	listen := q.Get("listen")
 	if listen == "" {
-		listen = ":9090"
+		listen = "127.0.0.1:9090"
+	} else {
+		listen = LocalListenAddress(listen)
 	}
 
 	return &AgentConfig{
@@ -205,6 +208,7 @@ func LoadAgentConfig(path string) (*AgentConfig, error) {
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, err
 	}
+	cfg.Proxy.Listen = LocalListenAddress(cfg.Proxy.Listen)
 	return cfg, nil
 }
 
@@ -227,5 +231,34 @@ func LoadServerConfig(path string) (*ServerConfigFile, error) {
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, err
 	}
+	cfg.XRay.Listen = LocalListenAddress(cfg.XRay.Listen)
+	cfg.Reverse.AdapterListen = LocalListenAddress(cfg.Reverse.AdapterListen)
+	cfg.Reverse.ListenIP = LocalListenIP(cfg.Reverse.ListenIP)
 	return cfg, nil
+}
+
+func LocalListenAddress(addr string) string {
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return ""
+	}
+	host, port, err := net.SplitHostPort(addr)
+	if err == nil {
+		if host == "" || host == "0.0.0.0" || host == "::" || host == "[::]" {
+			return net.JoinHostPort("127.0.0.1", port)
+		}
+		return addr
+	}
+	if strings.HasPrefix(addr, ":") {
+		return "127.0.0.1" + addr
+	}
+	return addr
+}
+
+func LocalListenIP(ip string) string {
+	ip = strings.TrimSpace(ip)
+	if ip == "" || ip == "0.0.0.0" || ip == "::" || ip == "[::]" {
+		return "127.0.0.1"
+	}
+	return ip
 }

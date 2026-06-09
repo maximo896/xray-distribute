@@ -3,6 +3,7 @@ package trafficdb
 import (
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -83,5 +84,36 @@ func TestConcurrentRecordXRayRequestsDoesNotBusy(t *testing.T) {
 
 	for err := range errs {
 		t.Fatalf("concurrent insert failed: %v", err)
+	}
+}
+
+func TestRawMirrorIncludesRequestHost(t *testing.T) {
+	raw := rawMirror(&model.MirrorRequest{
+		Method:  "GET",
+		URL:     "https://10.0.0.1/path",
+		Host:    "app.example.com",
+		Headers: map[string][]string{"User-Agent": {"test"}},
+	})
+
+	if !strings.Contains(raw, "\r\nHost: app.example.com\r\n") {
+		t.Fatalf("expected raw mirror request to include Host header, got:\n%s", raw)
+	}
+}
+
+func TestRawMirrorDoesNotDuplicateLegacyHostHeader(t *testing.T) {
+	raw := rawMirror(&model.MirrorRequest{
+		Method: "GET",
+		URL:    "https://10.0.0.1/path",
+		Host:   "app.example.com",
+		Headers: map[string][]string{
+			"host": {"legacy.example.com"},
+		},
+	})
+
+	if strings.Count(strings.ToLower(raw), "\r\nhost:") != 1 {
+		t.Fatalf("expected one Host header, got:\n%s", raw)
+	}
+	if !strings.Contains(raw, "\r\nhost: legacy.example.com\r\n") {
+		t.Fatalf("expected legacy Host header to be preserved, got:\n%s", raw)
 	}
 }

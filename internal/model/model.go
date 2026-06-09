@@ -70,6 +70,7 @@ type MirrorRequest struct {
 	AgentID   string              `json:"agent_id"`
 	Method    string              `json:"method"`
 	URL       string              `json:"url"`
+	Host      string              `json:"host,omitempty"`
 	Headers   map[string][]string `json:"headers"`
 	Body      []byte              `json:"body"`
 	Timestamp int64               `json:"timestamp"`

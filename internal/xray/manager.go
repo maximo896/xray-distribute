@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -424,10 +425,31 @@ func buildXRayRequest(mr *model.MirrorRequest) (*http.Request, error) {
 	}
 
 	for key, values := range mr.Headers {
+		if strings.EqualFold(key, "Host") {
+			continue
+		}
 		for _, value := range values {
 			req.Header.Add(key, value)
 		}
 	}
+	req.Host = xrayRequestHost(mr, req.URL.Host)
 
 	return req, nil
+}
+
+func xrayRequestHost(mr *model.MirrorRequest, urlHost string) string {
+	if mr.Host != "" {
+		return mr.Host
+	}
+	if mr.Headers != nil {
+		for key, values := range mr.Headers {
+			if len(values) == 0 || !strings.EqualFold(key, "Host") {
+				continue
+			}
+			if value := values[0]; value != "" {
+				return value
+			}
+		}
+	}
+	return urlHost
 }

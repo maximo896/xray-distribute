@@ -66,7 +66,7 @@ xray:
   binary: "data/xray"
   config: ""
   data_dir: "./data"
-  listen: "0.0.0.0:7777"
+  listen: "127.0.0.1:7777"
   level: ""
   plugins: ""
   webhook_url: ""
@@ -80,7 +80,7 @@ reverse:
   interactsh_token: ""
   adapter_listen: "127.0.0.1:9900"
   domain: ""
-  listen_ip: "0.0.0.0"
+  listen_ip: "127.0.0.1"
   dns_port: 53
   http_port: 80
   dns_is_ns: false

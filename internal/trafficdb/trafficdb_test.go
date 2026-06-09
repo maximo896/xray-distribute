@@ -58,6 +58,17 @@ func TestRecordOOBDoesNotMatchCommonShortSubdomainLabels(t *testing.T) {
 	if _, err := db.RecordXRayRequest("CONNECT", "www.google.com:443", map[string][]string{"User-Agent": {"Go-http-client/1.1"}}, nil, 0, ""); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.RecordMirror(&model.MirrorRequest{
+		Method: "GET",
+		URL:    "https://www.static.luangnuea.go.th:443/table_static_e/list",
+		Host:   "www.static.luangnuea.go.th",
+		Headers: map[string][]string{
+			"Referer":    {"https://www.static.luangnuea.go.th/home"},
+			"User-Agent": {"Mozilla/5.0"},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	for _, interaction := range []model.OOBInteraction{
 		{
@@ -74,6 +85,13 @@ func TestRecordOOBDoesNotMatchCommonShortSubdomainLabels(t *testing.T) {
 			RemoteAddress: "45.142.154.61",
 			Timestamp:     time.Now(),
 		},
+		{
+			Protocol:      "dns",
+			FullID:        "www.ukukk.uk.",
+			RawRequest:    ";; QUESTION SECTION:\n;www.ukukk.uk.\tIN\tSOA\n",
+			RemoteAddress: "35.171.100.175",
+			Timestamp:     time.Now(),
+		},
 	} {
 		match, err := db.RecordOOB(interaction)
 		if err != nil {
@@ -87,12 +105,12 @@ func TestRecordOOBDoesNotMatchCommonShortSubdomainLabels(t *testing.T) {
 
 func TestCandidateIDsOnlyIncludesLikelyCorrelationPrefix(t *testing.T) {
 	cases := map[string][]string{
-		"www.ukukk.uk":            {"www.ukukk.uk"},
-		"ns1.ukukk.uk.":           {"ns1.ukukk.uk"},
+		"www.ukukk.uk":            nil,
+		"ns1.ukukk.uk.":           nil,
 		"abc12345.ukukk.uk":       {"abc12345.ukukk.uk", "abc12345"},
-		"abc123.oast.fun":         {"abc123.oast.fun"},
+		"abc123.oast.fun":         nil,
 		"a-b-c-d-1.example.test":  {"a-b-c-d-1.example.test", "a-b-c-d-1"},
-		"bad_label!.example.test": {"bad_label!.example.test"},
+		"bad_label!.example.test": nil,
 	}
 	for input, want := range cases {
 		got := candidateIDs(input)

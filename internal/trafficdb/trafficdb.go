@@ -388,14 +388,17 @@ func candidateIDs(fullID string) []string {
 	if fullID == "" {
 		return nil
 	}
-	parts := []string{fullID}
 	if i := strings.IndexByte(fullID, '.'); i > 0 {
 		label := fullID[:i]
 		if isLikelyCorrelationID(label) {
-			parts = append(parts, label)
+			return []string{fullID, label}
 		}
+		return nil
 	}
-	return parts
+	if isLikelyCorrelationID(fullID) {
+		return []string{fullID}
+	}
+	return nil
 }
 
 func isLikelyCorrelationID(label string) bool {

@@ -140,7 +140,8 @@ func main() {
 				if err != nil {
 					logger.Warn("record OOB interaction failed", "error", err, "full_id", interaction.FullID)
 				}
-				if match == nil {
+				generatedByXRay := match == nil && xrayMgr.IsGeneratedOOB(interaction.FullID)
+				if match == nil && !generatedByXRay {
 					logger.Debug("OOB interaction ignored (no matching request)",
 						"protocol", interaction.Protocol,
 						"full_id", interaction.FullID,
@@ -154,6 +155,10 @@ func main() {
 					"oob_request":    interaction.RawRequest,
 					"oob_response":   interaction.RawResponse,
 					"remote_address": interaction.RemoteAddress,
+				}
+				if generatedByXRay {
+					description = fmt.Sprintf("Remote address: %s; matched xray generated OOB payload: %s", interaction.RemoteAddress, interaction.FullID)
+					detail["matched_source"] = "xray-generated"
 				}
 				vulnURL := interaction.FullID
 				request := interaction.RawRequest

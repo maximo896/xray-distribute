@@ -53,7 +53,7 @@ jobs:
       - name: Prepare server package
         run: |
           mkdir -p xray-distribute-server/data/certs
-          cp data/xray.yaml data/plugin.xray.yaml data/module.xray.yaml xray-distribute-server/data/
+          cp data/xray.yaml data/plugin.xray.yaml data/module.xray.yaml xray-distribute-server/data/ || true
           cp data/certs/ca.crt data/certs/ca.key xray-distribute-server/data/certs/ 2>/dev/null || true
 
           cat > xray-distribute-server/config.yaml << 'CFG'
@@ -150,9 +150,11 @@ SH
 
       - name: Download xray Linux binary
         run: |
-          curl -sL https://github.com/chaitin/xray/releases/download/1.9.11/xray_linux_amd64.zip -o /tmp/xray_linux.zip
-          unzip -o /tmp/xray_linux.zip -d /tmp/xray_linux
-          cp /tmp/xray_linux/xray_linux_amd64 xray-distribute-server/data/xray
+          curl -sL https://github.com/chaitin/xray/releases/download/1.9.11/xray_linux_amd64.zip -o /tmp/xray_linux.zip || { echo "Failed to download xray"; exit 1; }
+          unzip -o /tmp/xray_linux.zip -d /tmp/xray_linux || { echo "Failed to unzip xray"; exit 1; }
+          # Find the xray binary - name may vary across releases
+          XRAY_BIN=$(find /tmp/xray_linux -name 'xray*' -type f ! -name '*.zip' | head -1)
+          cp "$XRAY_BIN" xray-distribute-server/data/xray || { echo "xray binary not found in zip"; ls /tmp/xray_linux/; exit 1; }
           chmod +x xray-distribute-server/data/xray
 
       - name: Package

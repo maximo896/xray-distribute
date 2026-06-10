@@ -592,10 +592,6 @@ func extractRequestTokens(value string) []string {
 		}
 		if strings.Contains(part, ".") {
 			out = append(out, candidateIDs(part)...)
-			continue
-		}
-		if isLikelyCorrelationID(part) {
-			out = append(out, part)
 		}
 	}
 	return uniqueStrings(out)

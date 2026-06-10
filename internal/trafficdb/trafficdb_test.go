@@ -141,6 +141,14 @@ func TestRecordOOBMatchesIndexedXRayToken(t *testing.T) {
 	}
 }
 
+func TestExtractRequestTokensIgnoresOrdinaryHeaderWords(t *testing.T) {
+	raw := "GET https://target.local/ HTTP/1.1\r\nAccept-Encoding: gzip\r\nSec-Fetch-Dest: document\r\n\r\n"
+	got := extractRequestTokens(raw)
+	if len(got) != 0 {
+		t.Fatalf("expected ordinary header words to be ignored, got %#v", got)
+	}
+}
+
 func TestCandidateIDsOnlyIncludesLikelyCorrelationPrefix(t *testing.T) {
 	cases := map[string][]string{
 		"www.ukukk.uk":            nil,

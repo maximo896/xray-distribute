@@ -56,7 +56,7 @@ func main() {
 	st := store.New(cfg.XRay.DataDir, logger)
 
 	recordingProxyAddr := "127.0.0.1:9910"
-	recordingProxy := recordproxy.New(recordingProxyAddr, st.TrafficDB(), logger)
+	recordingProxy := recordproxy.New(recordingProxyAddr, st.TrafficDB(), certMgr, logger)
 	if err := recordingProxy.Start(); err != nil {
 		logger.Warn("recording proxy start failed", "error", err)
 	}

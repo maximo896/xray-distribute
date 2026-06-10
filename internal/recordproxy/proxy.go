@@ -1,7 +1,9 @@
 package recordproxy
 
 import (
+	"bufio"
 	"bytes"
+	"crypto/tls"
 	"io"
 	"log/slog"
 	"net"
@@ -10,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/xray-distribute/internal/cert"
 	"github.com/xray-distribute/internal/trafficdb"
 )
 
@@ -18,8 +21,10 @@ const recordQueueSize = 65536
 type Proxy struct {
 	addr     string
 	db       *trafficdb.DB
+	certMgr  *cert.CertManager
 	logger   *slog.Logger
 	server   *http.Server
+	client   *http.Client
 	recordCh chan recordJob
 	once     sync.Once
 }
@@ -33,12 +38,31 @@ type recordJob struct {
 	response string
 }
 
-func New(addr string, db *trafficdb.DB, logger *slog.Logger) *Proxy {
+func New(addr string, db *trafficdb.DB, certMgr *cert.CertManager, logger *slog.Logger) *Proxy {
 	return &Proxy{
 		addr:     addr,
 		db:       db,
+		certMgr:  certMgr,
 		logger:   logger,
+		client:   newForwardClient(),
 		recordCh: make(chan recordJob, recordQueueSize),
+	}
+}
+
+func newForwardClient() *http.Client {
+	return &http.Client{
+		Timeout: 60 * time.Second,
+		Transport: &http.Transport{
+			Proxy:                 nil,
+			MaxIdleConns:          2048,
+			MaxIdleConnsPerHost:   256,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   15 * time.Second,
+			ResponseHeaderTimeout: 30 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+			ForceAttemptHTTP2:     true,
+			TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
+		},
 	}
 }
 
@@ -102,9 +126,9 @@ func (p *Proxy) handleHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	outReq.Header = cloneHeader(r.Header)
-	outReq.Header.Del("Proxy-Connection")
+	cleanForwardHeaders(outReq.Header)
 
-	resp, err := http.DefaultTransport.RoundTrip(outReq)
+	resp, err := p.client.Do(outReq)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -121,30 +145,121 @@ func (p *Proxy) handleHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *Proxy) handleConnect(w http.ResponseWriter, r *http.Request) {
-	p.enqueueRecord(recordJob{method: r.Method, url: r.Host, headers: cloneHeader(r.Header)})
-
 	hj, ok := w.(http.Hijacker)
 	if !ok {
 		http.Error(w, "hijacking not supported", http.StatusInternalServerError)
 		return
 	}
-	clientConn, _, err := hj.Hijack()
+	clientConn, rw, err := hj.Hijack()
 	if err != nil {
 		return
 	}
-	target := r.Host
-	if !strings.Contains(target, ":") {
-		target += ":443"
+	hostPort := r.Host
+	if hostPort == "" && r.URL != nil {
+		hostPort = r.URL.Host
 	}
-	serverConn, err := net.DialTimeout("tcp", target, 10*time.Second)
+	if !strings.Contains(hostPort, ":") {
+		hostPort += ":443"
+	}
+	host := hostPort
+	if h, _, err := net.SplitHostPort(hostPort); err == nil {
+		host = h
+	}
+
+	if p.certMgr == nil {
+		p.logger.Warn("recording proxy MITM disabled: no cert manager", "host", hostPort)
+		clientConn.Close()
+		return
+	}
+	tlsCert, err := p.certMgr.GetCertForHost(host)
 	if err != nil {
+		p.logger.Warn("recording proxy MITM cert failed", "host", host, "error", err)
 		_, _ = clientConn.Write([]byte("HTTP/1.1 502 Bad Gateway\r\n\r\n"))
 		clientConn.Close()
 		return
 	}
+
 	_, _ = clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
-	go transfer(serverConn, clientConn)
-	go transfer(clientConn, serverConn)
+	buffered := &bufferedConn{Conn: clientConn, reader: rw.Reader}
+	tlsConn := tls.Server(buffered, &tls.Config{
+		Certificates: []tls.Certificate{*tlsCert},
+		NextProtos:   []string{"http/1.1"},
+		MinVersion:   tls.VersionTLS12,
+	})
+	tlsConn.SetDeadline(time.Now().Add(15 * time.Second))
+	if err := tlsConn.Handshake(); err != nil {
+		p.logger.Warn("recording proxy MITM handshake failed", "host", hostPort, "error", err)
+		tlsConn.Close()
+		return
+	}
+	tlsConn.SetDeadline(time.Time{})
+	p.handleTLSHTTP(tlsConn, hostPort)
+}
+
+type bufferedConn struct {
+	net.Conn
+	reader *bufio.Reader
+}
+
+func (c *bufferedConn) Read(b []byte) (int, error) {
+	return c.reader.Read(b)
+}
+
+func (p *Proxy) handleTLSHTTP(conn net.Conn, hostPort string) {
+	defer conn.Close()
+	reader := bufio.NewReader(conn)
+	for {
+		conn.SetDeadline(time.Now().Add(5 * time.Minute))
+		req, err := http.ReadRequest(reader)
+		if err != nil {
+			if err != io.EOF {
+				p.logger.Debug("recording proxy read MITM request failed", "host", hostPort, "error", err)
+			}
+			return
+		}
+		if err := p.forwardMITMRequest(conn, req, hostPort); err != nil {
+			p.logger.Debug("recording proxy forward MITM request failed", "host", hostPort, "error", err)
+			return
+		}
+		if req.Close {
+			return
+		}
+	}
+}
+
+func (p *Proxy) forwardMITMRequest(clientConn net.Conn, req *http.Request, hostPort string) error {
+	body, _ := io.ReadAll(req.Body)
+	req.Body.Close()
+
+	targetURL := "https://" + hostPort + req.URL.RequestURI()
+	headers := cloneHeader(req.Header)
+	if req.Host != "" && !hasHeader(headers, "Host") {
+		headers["Host"] = []string{req.Host}
+	}
+	p.enqueueRecord(recordJob{method: req.Method, url: targetURL, headers: headers, body: body})
+
+	outReq, err := http.NewRequest(req.Method, targetURL, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	outReq.Header = cloneHeader(req.Header)
+	cleanForwardHeaders(outReq.Header)
+	outReq.Host = req.Host
+
+	resp, err := p.client.Do(outReq)
+	if err != nil {
+		errResp := &http.Response{
+			StatusCode: http.StatusBadGateway,
+			ProtoMajor: 1,
+			ProtoMinor: 1,
+			Body:       io.NopCloser(strings.NewReader("502 Bad Gateway")),
+		}
+		_ = errResp.Write(clientConn)
+		return err
+	}
+	defer resp.Body.Close()
+	resp.Header.Del("Alt-Svc")
+	return resp.Write(clientConn)
 }
 
 func (p *Proxy) enqueueRecord(job recordJob) {
@@ -164,6 +279,29 @@ func transfer(dst net.Conn, src net.Conn) {
 	_, _ = io.Copy(dst, src)
 }
 
+func cleanForwardHeaders(header http.Header) {
+	for _, value := range header.Values("Connection") {
+		for _, field := range strings.Split(value, ",") {
+			if key := strings.TrimSpace(field); key != "" {
+				header.Del(key)
+			}
+		}
+	}
+	for _, key := range []string{
+		"Connection",
+		"Proxy-Connection",
+		"Keep-Alive",
+		"Proxy-Authenticate",
+		"Proxy-Authorization",
+		"Te",
+		"Trailer",
+		"Transfer-Encoding",
+		"Upgrade",
+	} {
+		header.Del(key)
+	}
+}
+
 func cloneHeader(h http.Header) map[string][]string {
 	out := make(map[string][]string, len(h))
 	for k, vals := range h {
@@ -172,4 +310,13 @@ func cloneHeader(h http.Header) map[string][]string {
 		out[k] = cp
 	}
 	return out
+}
+
+func hasHeader(h map[string][]string, name string) bool {
+	for key := range h {
+		if strings.EqualFold(key, name) {
+			return true
+		}
+	}
+	return false
 }

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -147,38 +146,7 @@ func main() {
 						"remote", interaction.RemoteAddress)
 					continue
 				}
-				description := fmt.Sprintf("Remote address: %s", interaction.RemoteAddress)
-				detail := map[string]interface{}{
-					"oob_protocol":   interaction.Protocol,
-					"oob_full_id":    interaction.FullID,
-					"oob_request":    interaction.RawRequest,
-					"oob_response":   interaction.RawResponse,
-					"remote_address": interaction.RemoteAddress,
-				}
-				request := match.Raw
-				vulnURL := match.URL
-				response := interaction.RawResponse
-				description = fmt.Sprintf("Remote address: %s; matched %s request: %s %s", interaction.RemoteAddress, match.Source, match.Method, match.URL)
-				detail["matched_source"] = match.Source
-				detail["matched_id"] = match.ID
-				detail["matched_method"] = match.Method
-				detail["matched_url"] = match.URL
-				detail["matched_raw"] = match.Raw
-				detail["matched_created_at"] = match.CreatedAt
-				detailJSON, _ := json.Marshal(detail)
-				vuln := &model.Vulnerability{
-					ID:          fmt.Sprintf("oob-%s-%s-%d", interaction.Protocol, interaction.FullID, interaction.Timestamp.UnixNano()),
-					Plugin:      "interactsh",
-					URL:         vulnURL,
-					VulnClass:   "oob-interaction",
-					Severity:    "medium",
-					Title:       fmt.Sprintf("OOB interaction received (%s)", interaction.Protocol),
-					Description: description,
-					Request:     request,
-					Response:    response,
-					Detail:      string(detailJSON),
-					CreatedAt:   interaction.Timestamp,
-				}
+				vuln := buildOOBVulnerability(interaction, match)
 				st.AddVuln(vuln)
 				if cfg.Webhook.Enabled {
 					notifier.Notify(vuln)

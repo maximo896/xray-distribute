@@ -151,12 +151,15 @@ func TestExtractRequestTokensIgnoresOrdinaryHeaderWords(t *testing.T) {
 
 func TestCandidateIDsOnlyIncludesLikelyCorrelationPrefix(t *testing.T) {
 	cases := map[string][]string{
-		"www.ukukk.uk":            nil,
-		"ns1.ukukk.uk.":           nil,
-		"abc12345.ukukk.uk":       {"abc12345.ukukk.uk", "abc12345"},
-		"abc123.oast.fun":         nil,
-		"a-b-c-d-1.example.test":  {"a-b-c-d-1.example.test", "a-b-c-d-1"},
-		"bad_label!.example.test": nil,
+		"www.ukukk.uk":                        nil,
+		"ns1.ukukk.uk.":                       nil,
+		"abc12345.ukukk.uk":                   nil,
+		"abc123456789.ukukk.uk":               {"abc123456789.ukukk.uk", "abc123456789"},
+		"abc123.oast.fun":                     nil,
+		"a-b-c-d-1.example.test":              {"a-b-c-d-1.example.test", "a-b-c-d-1"},
+		"optimizationguide-pa.googleapis.com": nil,
+		"clients2.google.com":                 nil,
+		"bad_label!.example.test":             nil,
 	}
 	for input, want := range cases {
 		got := candidateIDs(input)
@@ -164,6 +167,27 @@ func TestCandidateIDsOnlyIncludesLikelyCorrelationPrefix(t *testing.T) {
 			t.Fatalf("candidateIDs(%q) = %#v, want %#v", input, got, want)
 		}
 	}
+}
+
+func TestExtractRequestTokensDecodesEscapedOOBDomain(t *testing.T) {
+	raw := "GET /?callback=https%3A%2F%2Fi-smoke1234-abcd.d8k7rr2aikaevhsch1mgo7ragtx84dq49.ukukk.uk%2Fcb HTTP/1.1\r\nHost: example.com\r\n\r\n"
+	got := extractRequestTokens(raw)
+	want := "i-smoke1234-abcd.d8k7rr2aikaevhsch1mgo7ragtx84dq49.ukukk.uk"
+	if !containsString(got, want) {
+		t.Fatalf("expected decoded OOB domain %q in %#v", want, got)
+	}
+	if containsString(got, "2fi-smoke1234-abcd") {
+		t.Fatalf("encoded slash artifact should not be indexed: %#v", got)
+	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestConcurrentRecordXRayRequestsDoesNotBusy(t *testing.T) {

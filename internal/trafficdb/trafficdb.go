@@ -538,7 +538,10 @@ func isLikelyCorrelationID(label string) bool {
 		}
 		return false
 	}
-	return true
+	if !strings.ContainsAny(label, "0123456789") {
+		return false
+	}
+	return strings.Contains(label, "-") || len(label) >= 12
 }
 
 func recordRequestTokens(db *sql.DB, source string, requestID int64, values ...string) error {
@@ -580,6 +583,19 @@ func extractRequestTokens(value string) []string {
 	if value == "" {
 		return nil
 	}
+	values := []string{value}
+	if decoded, err := url.QueryUnescape(value); err == nil && decoded != value {
+		values = []string{strings.ToLower(decoded)}
+	}
+
+	out := make([]string, 0, 8)
+	for _, candidate := range values {
+		out = append(out, extractRequestTokensFromPlainText(candidate)...)
+	}
+	return uniqueStrings(out)
+}
+
+func extractRequestTokensFromPlainText(value string) []string {
 	parts := strings.FieldsFunc(value, func(r rune) bool {
 		return !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '.')
 	})

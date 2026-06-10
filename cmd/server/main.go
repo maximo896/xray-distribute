@@ -140,11 +140,10 @@ func main() {
 					logger.Warn("record OOB interaction failed", "error", err, "full_id", interaction.FullID)
 				}
 				if match == nil {
-					logger.Debug("OOB interaction ignored (no matching request)",
+					logger.Debug("OOB interaction has no matching request",
 						"protocol", interaction.Protocol,
 						"full_id", interaction.FullID,
 						"remote", interaction.RemoteAddress)
-					continue
 				}
 				vuln := buildOOBVulnerability(interaction, match)
 				st.AddVuln(vuln)

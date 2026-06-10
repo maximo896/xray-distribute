@@ -76,3 +76,47 @@ func TestMatchedOOBInteractionIsVisibleThroughVulnsAPI(t *testing.T) {
 		t.Fatalf("expected total=1, got %#v", payload["total"])
 	}
 }
+
+func TestUnmatchedOOBInteractionIsVisibleThroughVulnsAPI(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	st := store.New(t.TempDir(), logger)
+	defer st.TrafficDB().Close()
+
+	interaction := model.OOBInteraction{
+		Protocol:      "dns",
+		FullID:        "unmatched123456.ukukk.uk.",
+		RawRequest:    ";; QUESTION SECTION:\n;unmatched123456.ukukk.uk. IN A",
+		RawResponse:   ";; ANSWER SECTION:\nunmatched123456.ukukk.uk. 60 IN A 127.0.0.1",
+		RemoteAddress: "127.0.0.1",
+		Timestamp:     time.Now(),
+	}
+
+	match, err := st.RecordOOBInteraction(interaction)
+	if err != nil {
+		t.Fatalf("record oob interaction: %v", err)
+	}
+	if match != nil {
+		t.Fatalf("expected no matching request, got %#v", match)
+	}
+
+	vuln := buildOOBVulnerability(interaction, match)
+	if vuln == nil {
+		t.Fatal("expected unmatched OOB vulnerability")
+	}
+	if vuln.URL != interaction.FullID {
+		t.Fatalf("expected unmatched OOB URL to be full id, got %q", vuln.URL)
+	}
+	st.AddVuln(vuln)
+
+	apiServer := api.New(st, nil, nil, nil, nil, nil, "smoke-token", logger)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/vulns?token=smoke-token&page=1&page_size=20", nil)
+	rec := httptest.NewRecorder()
+	apiServer.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "unmatched123456.ukukk.uk") {
+		t.Fatalf("API response did not include unmatched OOB vulnerability: %s", rec.Body.String())
+	}
+}

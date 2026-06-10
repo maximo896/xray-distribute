@@ -9,36 +9,40 @@ import (
 )
 
 func buildOOBVulnerability(interaction model.OOBInteraction, match *trafficdb.Match) *model.Vulnerability {
-	if match == nil {
-		return nil
-	}
-
 	detail := map[string]interface{}{
-		"oob_protocol":       interaction.Protocol,
-		"oob_full_id":        interaction.FullID,
-		"oob_request":        interaction.RawRequest,
-		"oob_response":       interaction.RawResponse,
-		"remote_address":     interaction.RemoteAddress,
-		"matched_source":     match.Source,
-		"matched_id":         match.ID,
-		"matched_method":     match.Method,
-		"matched_url":        match.URL,
-		"matched_raw":        match.Raw,
-		"matched_created_at": match.CreatedAt,
+		"oob_protocol":   interaction.Protocol,
+		"oob_full_id":    interaction.FullID,
+		"oob_request":    interaction.RawRequest,
+		"oob_response":   interaction.RawResponse,
+		"remote_address": interaction.RemoteAddress,
 	}
-	detailJSON, _ := json.Marshal(detail)
 
-	return &model.Vulnerability{
+	vuln := &model.Vulnerability{
 		ID:          fmt.Sprintf("oob-%s-%s-%d", interaction.Protocol, interaction.FullID, interaction.Timestamp.UnixNano()),
 		Plugin:      "interactsh",
-		URL:         match.URL,
+		URL:         interaction.FullID,
 		VulnClass:   "oob-interaction",
 		Severity:    "medium",
 		Title:       fmt.Sprintf("OOB interaction received (%s)", interaction.Protocol),
-		Description: fmt.Sprintf("Remote address: %s; matched %s request: %s %s", interaction.RemoteAddress, match.Source, match.Method, match.URL),
-		Request:     match.Raw,
+		Description: fmt.Sprintf("Remote address: %s", interaction.RemoteAddress),
+		Request:     interaction.RawRequest,
 		Response:    interaction.RawResponse,
-		Detail:      string(detailJSON),
 		CreatedAt:   interaction.Timestamp,
 	}
+
+	if match != nil {
+		vuln.URL = match.URL
+		vuln.Description = fmt.Sprintf("Remote address: %s; matched %s request: %s %s", interaction.RemoteAddress, match.Source, match.Method, match.URL)
+		vuln.Request = match.Raw
+		detail["matched_source"] = match.Source
+		detail["matched_id"] = match.ID
+		detail["matched_method"] = match.Method
+		detail["matched_url"] = match.URL
+		detail["matched_raw"] = match.Raw
+		detail["matched_created_at"] = match.CreatedAt
+	}
+
+	detailJSON, _ := json.Marshal(detail)
+	vuln.Detail = string(detailJSON)
+	return vuln
 }

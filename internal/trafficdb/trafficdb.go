@@ -2,6 +2,7 @@ package trafficdb
 
 import (
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -579,8 +580,9 @@ func recordRequestTokens(db *sql.DB, source string, requestID int64, values ...s
 }
 
 func extractRequestTokens(value string) []string {
+	original := value
 	value = strings.ToLower(value)
-	if value == "" {
+	if original == "" {
 		return nil
 	}
 	values := []string{value}
@@ -592,7 +594,97 @@ func extractRequestTokens(value string) []string {
 	for _, candidate := range values {
 		out = append(out, extractRequestTokensFromPlainText(candidate)...)
 	}
+	for _, decoded := range decodeLikelyBase64Values(original) {
+		out = append(out, extractRequestTokens(decoded)...)
+	}
 	return uniqueStrings(out)
+}
+
+func decodeLikelyBase64Values(value string) []string {
+	const (
+		minLen        = 16
+		maxLen        = 8192
+		maxCandidates = 32
+	)
+
+	parts := strings.FieldsFunc(value, func(r rune) bool {
+		return !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '+' || r == '/' || r == '_' || r == '-' || r == '=')
+	})
+
+	out := make([]string, 0, 4)
+	seen := make(map[string]struct{})
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if len(part) < minLen || len(part) > maxLen {
+			continue
+		}
+		if !looksLikeBase64(part) {
+			continue
+		}
+		if _, ok := seen[part]; ok {
+			continue
+		}
+		seen[part] = struct{}{}
+		if len(seen) > maxCandidates {
+			break
+		}
+		if decoded, ok := decodeBase64Text(part); ok {
+			decoded = strings.ToLower(decoded)
+			out = append(out, decoded)
+			if unescaped, err := url.QueryUnescape(decoded); err == nil && unescaped != decoded {
+				out = append(out, strings.ToLower(unescaped))
+			}
+		}
+	}
+	return uniqueStrings(out)
+}
+
+func looksLikeBase64(value string) bool {
+	hasPadding := strings.Contains(value, "=")
+	hasUpper := false
+	for _, r := range value {
+		if r >= 'A' && r <= 'Z' {
+			hasUpper = true
+			break
+		}
+	}
+	return hasPadding || hasUpper || strings.ContainsAny(value, "+/_-")
+}
+
+func decodeBase64Text(value string) (string, bool) {
+	encodings := []*base64.Encoding{
+		base64.StdEncoding,
+		base64.RawStdEncoding,
+		base64.URLEncoding,
+		base64.RawURLEncoding,
+	}
+	for _, enc := range encodings {
+		decoded, err := enc.DecodeString(value)
+		if err != nil {
+			continue
+		}
+		if isUsefulDecodedText(decoded) {
+			return string(decoded), true
+		}
+	}
+	return "", false
+}
+
+func isUsefulDecodedText(value []byte) bool {
+	if len(value) == 0 {
+		return false
+	}
+	printable := 0
+	for _, b := range value {
+		if b == '\r' || b == '\n' || b == '\t' || (b >= 0x20 && b <= 0x7e) {
+			printable++
+		}
+	}
+	if printable*100/len(value) < 85 {
+		return false
+	}
+	text := strings.ToLower(string(value))
+	return strings.Contains(text, ".") || strings.Contains(text, "http://") || strings.Contains(text, "https://")
 }
 
 func extractRequestTokensFromPlainText(value string) []string {
